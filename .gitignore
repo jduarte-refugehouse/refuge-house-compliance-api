@@ -1,0 +1,6 @@
+node_modules/
+.env
+.DS_Store
+
+# The knowbase directory is cloned at runtime — don't commit it here
+knowbase/
