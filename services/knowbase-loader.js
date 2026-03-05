@@ -175,18 +175,44 @@ function indexDocument(docPath, doc) {
         ? paragraphs[0].replace(/\n/g, ' ').substring(0, 300)
         : '';
 
-    // Extract regulation references (TAC sections, RCC, DFPS, etc.)
+    // Extract regulation references — comprehensive Texas child welfare patterns
     const regulations = [];
     const regPatterns = [
+        // TAC (Texas Administrative Code) — multiple formats
         /TAC\s*§?\s*\d+\.\d+/gi,
         /(?:26\s+)?TAC\s+(?:Chapter\s+)?\d+/gi,
+        /Texas\s+Administrative\s+Code\s+(?:Chapter\s+)?\d+/gi,
         /§\s*\d+\.\d+/g,
+        // DFPS — broad matching for compound phrases
+        /DFPS\s+(?:Minimum\s+Standards?|rules?|policy|standards?|handbook|manual)\b/gi,
         /DFPS\s+\w+/gi,
-        /RCC\s+(?:contract|section|requirement)/gi,
-        /T3C\s+(?:Blueprint|contract|requirement)/gi,
+        // HHSC / HHS
+        /HHSC\s+(?:rules?|standards?|requirements?|policy|minimum\s+standards?)\b/gi,
+        /HHSC/g,
+        // Minimum Standards (standalone or with qualifiers)
+        /Minimum\s+Standards?\s+(?:for\s+)?(?:RCC|CPA|GRO|Child[- ]?Placing|Residential|General)/gi,
+        /Minimum\s+Standards?\s+§?\s*\d+/gi,
+        // RCC — broader matching
+        /RCC\s+(?:contract|section|requirement|standard|rule|minimum\s+standard)/gi,
+        /RCC\s+§?\s*\d+/gi,
+        // T3C — broader matching
+        /T3C\s+(?:Blueprint|contract|requirement|standard|guideline|scope\s+of\s+work)/gi,
+        // Texas codes
+        /Texas\s+Family\s+Code\s+§?\s*[\d.]+/gi,
+        /Texas\s+Health\s+(?:and|&)\s+Safety\s+Code\s+§?\s*[\d.]+/gi,
+        /Texas\s+Human\s+Resources\s+Code\s+§?\s*[\d.]+/gi,
+        /Texas\s+Family\s+Code/gi,
+        // Federal references
+        /Title\s+IV-[BE]/gi,
+        /ICPC/g,
+        /ICWA/g,
+        /MEPA/g,
+        // Common assessment/system acronyms
         /CANS/g,
         /ISP/g,
-        /FSFN/g
+        /FSFN/g,
+        /IMPACT/g,
+        /CLASS/g
     ];
     for (const pattern of regPatterns) {
         let m;
@@ -206,7 +232,10 @@ function indexDocument(docPath, doc) {
         { pattern: /HCS|Home\s+and\s+Community/gi, name: 'HCS' },
         { pattern: /STAR\s+Health/gi, name: 'STAR Health' },
         { pattern: /T3C/gi, name: 'T3C' },
-        { pattern: /FFCC|Foster\s+Family/gi, name: 'Foster Family' }
+        { pattern: /FFCC|Foster\s+Family/gi, name: 'Foster Family' },
+        { pattern: /PAL|Preparation\s+for\s+Adult\s+Living/gi, name: 'PAL' },
+        { pattern: /FBSS|Family[- ]Based\s+Safety/gi, name: 'FBSS' },
+        { pattern: /CPS/gi, name: 'CPS' }
     ];
     for (const { pattern, name } of packagePatterns) {
         if (pattern.test(content) && !packages.includes(name)) {
@@ -217,7 +246,7 @@ function indexDocument(docPath, doc) {
     // Extract key topics from headings and content
     const topicPatterns = [
         /discharge|transition/gi, /intake|admission|placement/gi,
-        /medication|prescription|OTC/gi, /assessment|evaluation|CANS/gi,
+        /medication|prescription|OTC|psychotropic/gi, /assessment|evaluation|CANS/gi,
         /training|orientation/gi, /supervision|monitoring/gi,
         /incident|reporting|abuse|neglect/gi, /contact|visitation|family/gi,
         /case\s*management|case\s*plan/gi, /medical|health|dental/gi,
@@ -228,7 +257,14 @@ function indexDocument(docPath, doc) {
         /transportation/gi, /clothing|allowance|personal/gi,
         /court|legal|hearing/gi, /permanency|adoption|reunification/gi,
         /ISP|service\s*plan|treatment\s*plan/gi,
-        /foster\s*(?:parent|home|care)/gi, /respite/gi
+        /foster\s*(?:parent|home|care)/gi, /respite/gi,
+        // Regulatory/compliance-specific topics
+        /licens/gi, /minimum\s*standard/gi, /compliance|audit|review/gi,
+        /contract\s*(?:requirement|obligation|provision)/gi,
+        /corrective\s*action/gi, /deficiency|violation|finding/gi,
+        /renewal|expiration/gi, /notification|reporting\s*requirement/gi,
+        /consent|authorization/gi, /confidential/gi,
+        /investigation/gi, /screening/gi
     ];
 
     const topics = [];
@@ -248,7 +284,7 @@ function indexDocument(docPath, doc) {
         summary,
         headings: headings.slice(0, 15), // cap at 15 to keep index compact
         topics,
-        regulations: regulations.slice(0, 20),
+        regulations: regulations.slice(0, 30),
         packages,
         tokenEstimate: Math.ceil(content.length / 4),
         category: doc.category
