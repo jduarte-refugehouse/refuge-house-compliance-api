@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // scripts/sync-knowbase.js
-// Manual script to sync the knowbase repo without starting the server.
+// Manual script to sync the knowbase from GitHub without starting the server.
 // Usage: npm run sync-knowbase
 
 require('dotenv').config();
 const { syncKnowbase, getAllDocuments } = require('../services/knowbase-loader');
 
 async function main() {
-    console.log('Syncing knowbase repository...');
+    console.log('Fetching knowbase from GitHub...');
     await syncKnowbase();
 
     const docs = getAllDocuments();
