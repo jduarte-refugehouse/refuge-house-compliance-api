@@ -15,14 +15,16 @@ const {
     getAllDocuments,
     refreshIfStale,
     formatDocumentsAsContext,
-    estimateTokens
+    estimateTokens,
+    searchDocuments
 } = require('./knowbase-loader');
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_COMPLIANCE_KEY;
 const CLAUDE_MODEL = process.env.ANTHROPIC_COMPLIANCE_MODEL || 'claude-sonnet-4-5';
 
 // Token budget: reserve room for response and conversation history
-const MAX_CONTEXT_TOKENS = 180000; // Claude supports 200K; leave room for response + messages
+// Claude supports 200K context; leave room for system prompt, response, and messages
+const MAX_CONTEXT_TOKENS = 150000;
 
 if (!ANTHROPIC_API_KEY) {
     console.warn('[CHAT] ANTHROPIC_COMPLIANCE_KEY not set. Chat will not work.');
@@ -64,6 +66,119 @@ TONE:
 - When the answer involves multiple steps or requirements, use numbered lists or bullet points.`;
 
 /**
+ * Extract keywords from a message for document searching.
+ * Strips common words and returns meaningful terms.
+ */
+function extractKeywords(message) {
+    const stopWords = new Set([
+        'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+        'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+        'should', 'may', 'might', 'can', 'shall', 'to', 'of', 'in', 'for',
+        'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'between',
+        'through', 'during', 'before', 'after', 'above', 'below', 'and', 'but',
+        'or', 'nor', 'not', 'so', 'yet', 'both', 'either', 'neither', 'each',
+        'every', 'all', 'any', 'few', 'more', 'most', 'other', 'some', 'such',
+        'no', 'only', 'own', 'same', 'than', 'too', 'very', 'just', 'because',
+        'if', 'when', 'where', 'how', 'what', 'which', 'who', 'whom', 'why',
+        'this', 'that', 'these', 'those', 'i', 'me', 'my', 'we', 'our', 'you',
+        'your', 'he', 'she', 'it', 'they', 'them', 'their', 'its',
+        'need', 'needs', 'want', 'tell', 'know', 'long', 'many', 'much', 'often',
+        'does', 'there', 'here'
+    ]);
+
+    const words = message.toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 2 && !stopWords.has(w));
+
+    // Deduplicate
+    return [...new Set(words)];
+}
+
+/**
+ * Select documents relevant to the user's question that fit within the token budget.
+ * Uses keyword matching and then fills remaining space with high-priority categories.
+ */
+function selectRelevantDocuments(message, history = []) {
+    // Combine current message + recent history for keyword extraction
+    let searchText = message;
+    for (const msg of history.slice(-4)) {
+        if (msg.role === 'user') {
+            searchText += ' ' + msg.content;
+        }
+    }
+
+    const keywords = extractKeywords(searchText);
+    console.log(`[CHAT] Search keywords: ${keywords.join(', ')}`);
+
+    // Score each document by keyword relevance
+    const allDocs = getAllDocuments();
+    const scored = [];
+
+    for (const [docPath, doc] of Object.entries(allDocs)) {
+        const lowerContent = doc.content.toLowerCase();
+        const lowerPath = docPath.toLowerCase();
+        let score = 0;
+
+        for (const kw of keywords) {
+            // Count occurrences in content (capped to avoid huge docs dominating)
+            const contentMatches = (lowerContent.match(new RegExp(kw, 'g')) || []).length;
+            score += Math.min(contentMatches, 10);
+
+            // Bonus for path/filename match
+            if (lowerPath.includes(kw)) {
+                score += 5;
+            }
+        }
+
+        // Small bonus for policy/regulatory docs (more likely to be relevant)
+        if (doc.category === 'policy') score += 1;
+        if (doc.category === 'regulatory') score += 1;
+
+        if (score > 0) {
+            scored.push({ docPath, doc, score });
+        }
+    }
+
+    // Sort by score descending
+    scored.sort((a, b) => b.score - a.score);
+
+    // Fill up to the token budget
+    const selected = {};
+    let currentTokens = 0;
+
+    for (const { docPath, doc } of scored) {
+        const docTokens = Math.ceil(doc.content.length / 4);
+        if (currentTokens + docTokens > MAX_CONTEXT_TOKENS) {
+            // If we haven't included anything yet, include at least one doc (truncated if needed)
+            if (Object.keys(selected).length === 0) {
+                selected[docPath] = doc;
+            }
+            break;
+        }
+        selected[docPath] = doc;
+        currentTokens += docTokens;
+    }
+
+    // If keyword search found very few results, add some docs from key categories
+    if (Object.keys(selected).length < 3 && currentTokens < MAX_CONTEXT_TOKENS * 0.5) {
+        const priorityCategories = ['policy', 'regulatory'];
+        for (const cat of priorityCategories) {
+            for (const [docPath, doc] of Object.entries(allDocs)) {
+                if (selected[docPath]) continue;
+                if (doc.category !== cat) continue;
+                const docTokens = Math.ceil(doc.content.length / 4);
+                if (currentTokens + docTokens > MAX_CONTEXT_TOKENS) break;
+                selected[docPath] = doc;
+                currentTokens += docTokens;
+            }
+        }
+    }
+
+    return selected;
+}
+
+/**
  * Handle a chat message. Supports multi-turn conversation.
  *
  * @param {string} message - The user's question
@@ -73,33 +188,41 @@ TONE:
 async function chat(message, history = []) {
     await refreshIfStale();
 
-    // Load all documents and build context
     const allDocs = getAllDocuments();
-    const docCount = Object.keys(allDocs).length;
+    const allDocCount = Object.keys(allDocs).length;
     const totalTokens = estimateTokens(allDocs);
 
     console.log(`[CHAT] Question: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`);
-    console.log(`[CHAT] Context: ${docCount} documents, ~${totalTokens} estimated tokens`);
+    console.log(`[CHAT] Full knowbase: ${allDocCount} documents, ~${totalTokens} estimated tokens`);
 
-    if (docCount === 0) {
+    if (allDocCount === 0) {
         throw new Error('No documents loaded. The knowbase may not have synced. Try POST /api/documents/refresh');
     }
 
-    // Build the document context
-    // If under token budget, include all docs. Otherwise, this is where we'd add
-    // relevance filtering in the future.
-    let documentsToInclude = allDocs;
+    // Select documents that fit within the token budget.
+    // If the full knowbase fits, use it all. Otherwise, search for relevant docs.
+    let documentsToInclude;
     let contextNote = '';
 
-    if (totalTokens > MAX_CONTEXT_TOKENS) {
-        console.warn(`[CHAT] Total knowbase (${totalTokens} tokens) exceeds budget (${MAX_CONTEXT_TOKENS}). Including all docs but response quality may vary.`);
-        contextNote = `Note: The full document library is very large. If you cannot find the answer in the provided context, let the user know and suggest they narrow their question.`;
+    if (totalTokens <= MAX_CONTEXT_TOKENS) {
+        // Everything fits — include all docs
+        documentsToInclude = allDocs;
+        console.log(`[CHAT] All docs fit within budget, including all ${allDocCount}`);
+    } else {
+        // Knowbase too large — filter by relevance
+        documentsToInclude = selectRelevantDocuments(message, history);
+        const selectedCount = Object.keys(documentsToInclude).length;
+        const selectedTokens = estimateTokens(documentsToInclude);
+        console.log(`[CHAT] Filtered to ${selectedCount} relevant documents (~${selectedTokens} tokens)`);
+        contextNote = `Note: Only the most relevant documents from the policy library are included below (${selectedCount} of ${allDocCount} total). If the answer is not found here, let the user know and suggest they rephrase their question with more specific terms.`;
     }
+
+    const docCount = Object.keys(documentsToInclude).length;
 
     const documentContext = formatDocumentsAsContext(
         documentsToInclude,
         '=== REFUGE HOUSE POLICY AND COMPLIANCE KNOWLEDGE BASE ===\n' +
-        'The following documents represent the complete policy library. ' +
+        'The following documents are from the policy library. ' +
         'Use these as your sole source of truth when answering questions.\n' +
         (contextNote ? `\n${contextNote}\n` : '')
     );
@@ -153,7 +276,8 @@ async function chat(message, history = []) {
         answer,
         _meta: {
             documentsInContext: docCount,
-            estimatedContextTokens: totalTokens,
+            totalDocumentsAvailable: allDocCount,
+            estimatedContextTokens: estimateTokens(documentsToInclude),
             model: CLAUDE_MODEL,
             responseTimeMs: elapsed,
             inputTokens: response.usage?.input_tokens || null,
