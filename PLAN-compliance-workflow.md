@@ -4,11 +4,28 @@
 
 This API will manage the full compliance content lifecycle — not just policies and procedures, but all content that informs compliance and outcomes: operational documents, service plans, CQI models, logic models, treatment frameworks, templates, guides, and regulatory references.
 
-Pulse remains the presentation and delivery layer (PDF rendering, email, UI). RadiusBifrost (Azure SQL) stores all workflow and review state.
+Pulse remains the presentation and delivery layer (PDF rendering, email, UI).
 
 ---
 
-## 1. Database Schema (RadiusBifrost — Azure SQL)
+## 1. Database: RadiusCompliance (Dedicated Azure SQL Database)
+
+### Why a separate database?
+
+Compliance workflow data (review schedules, approval chains, audit trails) is fundamentally different from client/case operational data in RadiusBifrost. A dedicated database on the **same Azure SQL server** (`refugehouse-bifrost-server`) provides:
+
+- **Clean separation** — compliance lifecycle data doesn't muddy operational tables
+- **Independent scaling** — compliance queries won't compete with case management workloads
+- **Security boundaries** — this API only needs access to its own database, not client/case data
+- **Simpler migrations** — evolve the compliance schema without any risk to RadiusBifrost
+
+**Server:** `refugehouse-bifrost-server` (existing)
+**Database:** `RadiusCompliance` (new — created on the same server)
+**Connection:** Separate connection string in this API's environment config
+
+If the compliance API ever needs client/case context (e.g., linking a review to a case or user), it gets that through Pulse via API calls — no cross-database queries.
+
+### Schema
 
 ### Table: `compliance_documents`
 Registry of all managed content with review schedule configuration.
@@ -159,10 +176,11 @@ Review frequencies are configurable per document — these are defaults.
 ## 4. Implementation Steps
 
 ### Phase 1: Database & Connection
-1. Add `mssql` package to connect to RadiusBifrost
-2. Create database migration scripts for the 5 tables
-3. Add Bifrost connection config to `.env` / Azure App Settings
-4. Build a shared `db.js` service for connection pooling
+1. Create `RadiusCompliance` database on `refugehouse-bifrost-server` in Azure portal
+2. Add `mssql` package to this API
+3. Create database migration scripts for the 5 tables
+4. Add RadiusCompliance connection config to `.env` / Azure App Settings (separate from RadiusBifrost)
+5. Build a shared `db.js` service for connection pooling
 
 ### Phase 2: Document Registry & Review Lifecycle
 5. Build `compliance-documents` service and routes
