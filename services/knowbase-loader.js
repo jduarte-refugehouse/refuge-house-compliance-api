@@ -1,46 +1,104 @@
 // services/knowbase-loader.js
-// Clones or pulls the refuge-house-knowbase repo and reads all documents into memory.
-// The knowbase is the single source of truth — it can contain any number of documents
-// in any directory structure. This loader discovers everything dynamically.
+// Fetches documents from the refuge-house-knowbase GitHub repo via the API.
+// No git clone needed — reads files directly from GitHub into memory.
+// The knowbase is the single source of truth for all policy documents.
 
-const fs = require('fs');
 const path = require('path');
-const simpleGit = require('simple-git');
 
-const KNOWBASE_REPO = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
-const KNOWBASE_DIR = path.join(__dirname, '..', 'knowbase');
+// Parse owner/repo from the repo URL
+const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
+const KNOWBASE_BRANCH = process.env.KNOWBASE_BRANCH || 'main';
 const REFRESH_INTERVAL_MS = parseInt(process.env.KNOWBASE_REFRESH_MINUTES || '30', 10) * 60 * 1000;
+
+// Extract owner/repo from URL (handles both .git and non-.git URLs)
+function parseRepoUrl(url) {
+    const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+    if (!match) throw new Error(`Cannot parse GitHub repo from URL: ${url}`);
+    return { owner: match[1], repo: match[2] };
+}
+
+const { owner: REPO_OWNER, repo: REPO_NAME } = parseRepoUrl(KNOWBASE_REPO_URL);
 
 // In-memory document cache: { relativePath: { content, lastModified, sizeBytes, category } }
 let _documentCache = {};
 let _lastRefresh = 0;
-let _manifest = null; // Optional manifest loaded from knowbase repo
+let _manifest = null;
 
 /**
- * Clone or pull the knowbase repository.
+ * Make a GitHub API request. Uses GITHUB_TOKEN if available (for private repos).
  */
-async function syncKnowbase() {
-    const gitDir = path.join(KNOWBASE_DIR, '.git');
+async function githubFetch(apiPath) {
+    const url = `https://api.github.com${apiPath}`;
+    const headers = {
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'refuge-house-compliance-api'
+    };
 
-    if (fs.existsSync(gitDir)) {
-        console.log('[KNOWBASE] Pulling latest changes...');
-        const git = simpleGit(KNOWBASE_DIR);
-        await git.pull('origin', 'main');
-    } else {
-        console.log('[KNOWBASE] Cloning repository...');
-        if (fs.existsSync(KNOWBASE_DIR)) {
-            const files = fs.readdirSync(KNOWBASE_DIR);
-            if (files.length > 0 && !fs.existsSync(gitDir)) {
-                fs.rmSync(KNOWBASE_DIR, { recursive: true });
-            }
-        }
-        const git = simpleGit();
-        await git.clone(KNOWBASE_REPO, KNOWBASE_DIR);
+    const token = process.env.GITHUB_TOKEN;
+    if (token) {
+        headers['Authorization'] = `token ${token}`;
     }
 
-    // Reload documents and manifest
-    await loadAllDocuments();
-    loadManifest();
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`GitHub API ${res.status}: ${body}`);
+    }
+    return res.json();
+}
+
+/**
+ * Recursively fetch the repo tree and load all .md files into memory.
+ */
+async function syncKnowbase() {
+    console.log(`[KNOWBASE] Fetching from GitHub: ${REPO_OWNER}/${REPO_NAME} (${KNOWBASE_BRANCH})`);
+
+    // Get the full repo tree recursively in one API call
+    const tree = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${KNOWBASE_BRANCH}?recursive=1`);
+
+    _documentCache = {};
+
+    // Filter for .md files, skip README.md, hidden dirs, node_modules, source-pdfs
+    const mdFiles = tree.tree.filter(item => {
+        if (item.type !== 'blob') return false;
+        if (!item.path.endsWith('.md')) return false;
+        if (path.basename(item.path) === 'README.md') return false;
+
+        const parts = item.path.split('/');
+        for (const part of parts) {
+            if (part.startsWith('.') || part === 'node_modules' || part === 'source-pdfs') {
+                return false;
+            }
+        }
+        return true;
+    });
+
+    console.log(`[KNOWBASE] Found ${mdFiles.length} documents, fetching content...`);
+
+    // Fetch all file contents in parallel
+    const fetchPromises = mdFiles.map(async (file) => {
+        try {
+            const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
+            const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+
+            const topDir = file.path.split('/')[0];
+            const category = categorize(topDir, file.path);
+
+            _documentCache[file.path] = {
+                content,
+                lastModified: new Date().toISOString(),
+                sizeBytes: Buffer.byteLength(content, 'utf-8'),
+                category
+            };
+        } catch (err) {
+            console.warn(`[KNOWBASE] Failed to fetch ${file.path}: ${err.message}`);
+        }
+    });
+
+    await Promise.all(fetchPromises);
+
+    // Load manifest if it exists
+    loadManifest(tree);
     _lastRefresh = Date.now();
 
     const categories = getCategorySummary();
@@ -56,43 +114,21 @@ async function syncKnowbase() {
 }
 
 /**
- * Recursively discover and read all .md files from the knowbase directory.
- * Assigns a category based on the top-level directory.
+ * Load the optional document-manifest.json from the repo tree.
  */
-async function loadAllDocuments() {
-    _documentCache = {};
-
-    function walkDir(dir, baseDir) {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                // Skip hidden dirs, node_modules, source PDFs
-                if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === 'source-pdfs') {
-                    continue;
-                }
-                walkDir(fullPath, baseDir);
-            } else if (entry.name.endsWith('.md') && entry.name !== 'README.md') {
-                const relativePath = path.relative(baseDir, fullPath);
-                const content = fs.readFileSync(fullPath, 'utf-8');
-                const stats = fs.statSync(fullPath);
-
-                // Derive category from top-level directory
-                const topDir = relativePath.split(path.sep)[0];
-                const category = categorize(topDir, relativePath);
-
-                _documentCache[relativePath] = {
-                    content,
-                    lastModified: stats.mtime.toISOString(),
-                    sizeBytes: Buffer.byteLength(content, 'utf-8'),
-                    category
-                };
-            }
+async function loadManifest(tree) {
+    const manifestFile = tree.tree.find(item => item.path === 'document-manifest.json');
+    if (manifestFile) {
+        try {
+            const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${manifestFile.sha}`);
+            const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+            _manifest = JSON.parse(content);
+        } catch (err) {
+            console.warn('[KNOWBASE] Failed to parse document-manifest.json:', err.message);
+            _manifest = null;
         }
-    }
-
-    if (fs.existsSync(KNOWBASE_DIR)) {
-        walkDir(KNOWBASE_DIR, KNOWBASE_DIR);
+    } else {
+        _manifest = null;
     }
 }
 
@@ -108,26 +144,6 @@ function categorize(topDir, relativePath) {
     if (lower.includes('template') || lower.includes('form')) return 'template';
     if (lower.includes('training')) return 'training';
     return 'general';
-}
-
-/**
- * Load the optional document-manifest.json from the knowbase repo.
- * This file lives IN the knowbase (not in the API code) so it evolves
- * with the documents themselves.
- */
-function loadManifest() {
-    const manifestPath = path.join(KNOWBASE_DIR, 'document-manifest.json');
-    if (fs.existsSync(manifestPath)) {
-        try {
-            const raw = fs.readFileSync(manifestPath, 'utf-8');
-            _manifest = JSON.parse(raw);
-        } catch (err) {
-            console.warn('[KNOWBASE] Failed to parse document-manifest.json:', err.message);
-            _manifest = null;
-        }
-    } else {
-        _manifest = null;
-    }
 }
 
 /**
@@ -234,8 +250,6 @@ function estimateTokens(documents) {
 
 /**
  * Search documents by keyword (simple text search).
- * Returns documents whose content or path contains any of the keywords.
- * Useful for narrowing context when the full knowbase is too large.
  */
 function searchDocuments(keywords) {
     const lowerKeywords = keywords.map(k => k.toLowerCase());
