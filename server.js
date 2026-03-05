@@ -15,6 +15,7 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('[FATAL] Unhandled rejection at:', promise, 'reason:', reason);
 });
 
+const path = require('path');
 const express = require('express');
 const { syncKnowbase } = require('./services/knowbase-loader');
 
@@ -23,6 +24,9 @@ const PORT = process.env.PORT || 3100;
 
 // Middleware
 app.use(express.json({ limit: '5mb' }));
+
+// Serve test console UI
+app.use(express.static(path.join(__dirname, 'public')));
 
 // API key authentication for service-to-service calls
 app.use('/api', (req, res, next) => {
