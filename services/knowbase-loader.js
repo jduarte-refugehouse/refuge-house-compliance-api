@@ -4,11 +4,14 @@
 // The knowbase is the single source of truth for all policy documents.
 
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 
 // Parse owner/repo from the repo URL
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
 const KNOWBASE_BRANCH = process.env.KNOWBASE_BRANCH || 'main';
-const REFRESH_INTERVAL_MS = parseInt(process.env.KNOWBASE_REFRESH_MINUTES || '30', 10) * 60 * 1000;
+// Default: check for updates once per day (1440 minutes). Override with KNOWBASE_REFRESH_MINUTES.
+const REFRESH_INTERVAL_MS = parseInt(process.env.KNOWBASE_REFRESH_MINUTES || '1440', 10) * 60 * 1000;
 
 // Extract owner/repo from URL (handles both .git and non-.git URLs)
 function parseRepoUrl(url) {
@@ -21,8 +24,52 @@ const { owner: REPO_OWNER, repo: REPO_NAME } = parseRepoUrl(KNOWBASE_REPO_URL);
 
 // In-memory document cache: { relativePath: { content, lastModified, sizeBytes, category } }
 let _documentCache = {};
+// Document index: { relativePath: { summary, headings, topics, regulations, packages, tokenEstimate, contentHash } }
+let _documentIndex = {};
 let _lastRefresh = 0;
 let _manifest = null;
+
+// Persistent index cache — survives restarts, avoids re-indexing unchanged documents
+const INDEX_CACHE_DIR = process.env.INDEX_CACHE_DIR || path.join(__dirname, '..', 'data');
+const INDEX_CACHE_FILE = path.join(INDEX_CACHE_DIR, 'document-index-cache.json');
+
+/**
+ * Compute a content hash for a document (used to detect changes).
+ */
+function contentHash(content) {
+    return crypto.createHash('sha256').update(content).digest('hex').substring(0, 16);
+}
+
+/**
+ * Load the persistent index cache from disk.
+ */
+function loadIndexCache() {
+    try {
+        if (fs.existsSync(INDEX_CACHE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(INDEX_CACHE_FILE, 'utf-8'));
+            console.log(`[KNOWBASE] Loaded index cache with ${Object.keys(data).length} entries`);
+            return data;
+        }
+    } catch (err) {
+        console.warn(`[KNOWBASE] Failed to load index cache: ${err.message}`);
+    }
+    return {};
+}
+
+/**
+ * Save the document index to the persistent cache on disk.
+ */
+function saveIndexCache() {
+    try {
+        if (!fs.existsSync(INDEX_CACHE_DIR)) {
+            fs.mkdirSync(INDEX_CACHE_DIR, { recursive: true });
+        }
+        fs.writeFileSync(INDEX_CACHE_FILE, JSON.stringify(_documentIndex, null, 2));
+        console.log(`[KNOWBASE] Saved index cache (${Object.keys(_documentIndex).length} entries)`);
+    } catch (err) {
+        console.warn(`[KNOWBASE] Failed to save index cache: ${err.message}`);
+    }
+}
 
 /**
  * Make a GitHub API request. Uses GITHUB_TOKEN if available (for private repos).
@@ -97,8 +144,9 @@ async function syncKnowbase() {
 
     await Promise.all(fetchPromises);
 
-    // Load manifest if it exists
+    // Load manifest if it exists, and build the document index
     loadManifest(tree);
+    buildDocumentIndex();
     _lastRefresh = Date.now();
 
     const categories = getCategorySummary();
@@ -144,6 +192,200 @@ function categorize(topDir, relativePath) {
     if (lower.includes('template') || lower.includes('form')) return 'template';
     if (lower.includes('training')) return 'training';
     return 'general';
+}
+
+/**
+ * Build an index entry for a single document by extracting structured metadata
+ * from its markdown content. This runs during sync and powers the two-pass
+ * retrieval in chat.
+ */
+function indexDocument(docPath, doc) {
+    const content = doc.content;
+
+    // Extract markdown headings
+    const headings = [];
+    const headingRegex = /^#{1,4}\s+(.+)$/gm;
+    let match;
+    while ((match = headingRegex.exec(content)) !== null) {
+        headings.push(match[1].trim());
+    }
+
+    // Extract the first meaningful paragraph as a summary
+    const paragraphs = content
+        .replace(/^#{1,6}\s+.+$/gm, '') // strip headings
+        .split(/\n{2,}/)
+        .map(p => p.trim())
+        .filter(p => p.length > 30 && !p.startsWith('|') && !p.startsWith('-'));
+    const summary = paragraphs[0]
+        ? paragraphs[0].replace(/\n/g, ' ').substring(0, 300)
+        : '';
+
+    // Extract regulation references — comprehensive Texas child welfare patterns
+    const regulations = [];
+    const regPatterns = [
+        // TAC (Texas Administrative Code) — multiple formats
+        /TAC\s*§?\s*\d+\.\d+/gi,
+        /(?:26\s+)?TAC\s+(?:Chapter\s+)?\d+/gi,
+        /Texas\s+Administrative\s+Code\s+(?:Chapter\s+)?\d+/gi,
+        /§\s*\d+\.\d+/g,
+        // DFPS — broad matching for compound phrases
+        /DFPS\s+(?:Minimum\s+Standards?|rules?|policy|standards?|handbook|manual)\b/gi,
+        /DFPS\s+\w+/gi,
+        // HHSC / HHS
+        /HHSC\s+(?:rules?|standards?|requirements?|policy|minimum\s+standards?)\b/gi,
+        /HHSC/g,
+        // Minimum Standards (standalone or with qualifiers)
+        /Minimum\s+Standards?\s+(?:for\s+)?(?:RCC|CPA|GRO|Child[- ]?Placing|Residential|General)/gi,
+        /Minimum\s+Standards?\s+§?\s*\d+/gi,
+        // RCC — broader matching
+        /RCC\s+(?:contract|section|requirement|standard|rule|minimum\s+standard)/gi,
+        /RCC\s+§?\s*\d+/gi,
+        // T3C — broader matching
+        /T3C\s+(?:Blueprint|contract|requirement|standard|guideline|scope\s+of\s+work)/gi,
+        // Texas codes
+        /Texas\s+Family\s+Code\s+§?\s*[\d.]+/gi,
+        /Texas\s+Health\s+(?:and|&)\s+Safety\s+Code\s+§?\s*[\d.]+/gi,
+        /Texas\s+Human\s+Resources\s+Code\s+§?\s*[\d.]+/gi,
+        /Texas\s+Family\s+Code/gi,
+        // Federal references
+        /Title\s+IV-[BE]/gi,
+        /ICPC/g,
+        /ICWA/g,
+        /MEPA/g,
+        // Common assessment/system acronyms
+        /CANS/g,
+        /ISP/g,
+        /FSFN/g,
+        /IMPACT/g,
+        /CLASS/g
+    ];
+    for (const pattern of regPatterns) {
+        let m;
+        while ((m = pattern.exec(content)) !== null) {
+            const ref = m[0].trim();
+            if (!regulations.includes(ref)) regulations.push(ref);
+        }
+    }
+
+    // Extract service package references
+    const packages = [];
+    const packagePatterns = [
+        { pattern: /IDD|Autism|intellectual\s+disabilit/gi, name: 'IDD/Autism' },
+        { pattern: /Mental\s+Health|MH\s+package/gi, name: 'Mental Health' },
+        { pattern: /Kinship/gi, name: 'Kinship' },
+        { pattern: /SIL|Supervised\s+Independent\s+Living/gi, name: 'SIL' },
+        { pattern: /HCS|Home\s+and\s+Community/gi, name: 'HCS' },
+        { pattern: /STAR\s+Health/gi, name: 'STAR Health' },
+        { pattern: /T3C/gi, name: 'T3C' },
+        { pattern: /FFCC|Foster\s+Family/gi, name: 'Foster Family' },
+        { pattern: /PAL|Preparation\s+for\s+Adult\s+Living/gi, name: 'PAL' },
+        { pattern: /FBSS|Family[- ]Based\s+Safety/gi, name: 'FBSS' },
+        { pattern: /CPS/gi, name: 'CPS' }
+    ];
+    for (const { pattern, name } of packagePatterns) {
+        if (pattern.test(content) && !packages.includes(name)) {
+            packages.push(name);
+        }
+    }
+
+    // Extract key topics from headings and content
+    const topicPatterns = [
+        /discharge|transition/gi, /intake|admission|placement/gi,
+        /medication|prescription|OTC|psychotropic/gi, /assessment|evaluation|CANS/gi,
+        /training|orientation/gi, /supervision|monitoring/gi,
+        /incident|reporting|abuse|neglect/gi, /contact|visitation|family/gi,
+        /case\s*management|case\s*plan/gi, /medical|health|dental/gi,
+        /education|school/gi, /behavior|crisis|restraint/gi,
+        /documentation|record|file/gi, /background\s*check|clearance/gi,
+        /staffing|personnel|employee/gi, /rights|grievance|complaint/gi,
+        /safety|emergency|evacuation/gi, /nutrition|meal|diet/gi,
+        /transportation/gi, /clothing|allowance|personal/gi,
+        /court|legal|hearing/gi, /permanency|adoption|reunification/gi,
+        /ISP|service\s*plan|treatment\s*plan/gi,
+        /foster\s*(?:parent|home|care)/gi, /respite/gi,
+        // Regulatory/compliance-specific topics
+        /licens/gi, /minimum\s*standard/gi, /compliance|audit|review/gi,
+        /contract\s*(?:requirement|obligation|provision)/gi,
+        /corrective\s*action/gi, /deficiency|violation|finding/gi,
+        /renewal|expiration/gi, /notification|reporting\s*requirement/gi,
+        /consent|authorization/gi, /confidential/gi,
+        /investigation/gi, /screening/gi
+    ];
+
+    const topics = [];
+    for (const pattern of topicPatterns) {
+        if (pattern.test(content)) {
+            // Use the first match as the topic label
+            pattern.lastIndex = 0;
+            const m = pattern.exec(content);
+            if (m) {
+                const topic = m[0].toLowerCase().trim();
+                if (!topics.includes(topic)) topics.push(topic);
+            }
+        }
+    }
+
+    return {
+        summary,
+        headings: headings.slice(0, 15), // cap at 15 to keep index compact
+        topics,
+        regulations: regulations.slice(0, 30),
+        packages,
+        tokenEstimate: Math.ceil(content.length / 4),
+        category: doc.category,
+        contentHash: contentHash(content)
+    };
+}
+
+/**
+ * Build the document index for all cached documents.
+ * Uses a persistent cache on disk — only re-indexes documents whose content has changed.
+ * Regulatory/external docs that don't change get indexed once and cached indefinitely.
+ *
+ * @param {boolean} forceReindex - If true, ignore cache and re-index everything
+ * @returns {{ total: number, reused: number, reindexed: number, changed: string[] }}
+ */
+function buildDocumentIndex(forceReindex = false) {
+    const cachedIndex = forceReindex ? {} : loadIndexCache();
+    const newIndex = {};
+    let reused = 0;
+    let reindexed = 0;
+    const changed = [];
+
+    for (const [docPath, doc] of Object.entries(_documentCache)) {
+        const hash = contentHash(doc.content);
+        const cached = cachedIndex[docPath];
+
+        if (cached && cached.contentHash === hash) {
+            // Content unchanged — reuse cached index entry
+            newIndex[docPath] = cached;
+            reused++;
+        } else {
+            // New or changed document — index it
+            newIndex[docPath] = indexDocument(docPath, doc);
+            reindexed++;
+            changed.push(docPath);
+        }
+    }
+
+    _documentIndex = newIndex;
+    const total = Object.keys(newIndex).length;
+    console.log(`[KNOWBASE] Document index: ${reused} cached, ${reindexed} re-indexed (${total} total)`);
+    if (changed.length > 0) {
+        console.log(`[KNOWBASE] Changed documents: ${changed.join(', ')}`);
+    }
+
+    // Persist to disk for next startup
+    saveIndexCache();
+
+    return { total, reused, reindexed, changed };
+}
+
+/**
+ * Get the document index.
+ */
+function getDocumentIndex() {
+    return _documentIndex;
 }
 
 /**
@@ -273,11 +515,13 @@ function searchDocuments(keywords) {
 
 module.exports = {
     syncKnowbase,
+    buildDocumentIndex,
     getManifest,
     getDocument,
     getDocumentsByPath,
     getDocumentsByCategory,
     getAllDocuments,
+    getDocumentIndex,
     getCategorySummary,
     refreshIfStale,
     formatDocumentsAsContext,
