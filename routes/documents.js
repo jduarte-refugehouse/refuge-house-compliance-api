@@ -1,7 +1,7 @@
 // routes/documents.js - Browse and inspect loaded knowbase documents
 const express = require('express');
 const router = express.Router();
-const { getAllDocuments, getDocument, getCategorySummary, searchDocuments, estimateTokens } = require('../services/knowbase-loader');
+const { getAllDocuments, getDocument, getDocumentIndex, getCategorySummary, searchDocuments, estimateTokens } = require('../services/knowbase-loader');
 const { listEvaluationTypes } = require('../services/context-builder');
 
 // GET /api/documents - List all loaded documents with categories
@@ -47,6 +47,26 @@ router.get('/view', (req, res) => {
         lastModified: doc.lastModified,
         sizeBytes: doc.sizeBytes,
         content: doc.content
+    });
+});
+
+// GET /api/documents/index - View the auto-generated document index used for retrieval
+router.get('/index', (req, res) => {
+    const index = getDocumentIndex();
+    const docPath = req.query.path;
+
+    if (docPath) {
+        // Return index for a specific document
+        if (!index[docPath]) {
+            return res.status(404).json({ error: `Document not found in index: ${docPath}` });
+        }
+        return res.json({ path: docPath, ...index[docPath] });
+    }
+
+    // Return full index
+    res.json({
+        count: Object.keys(index).length,
+        index
     });
 });
 

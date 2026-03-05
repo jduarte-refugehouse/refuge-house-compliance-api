@@ -18,6 +18,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 const {
     getAllDocuments,
+    getDocumentIndex,
     refreshIfStale,
     formatDocumentsAsContext,
     estimateTokens
@@ -69,22 +70,38 @@ TONE:
 - When the answer involves multiple steps or requirements, use numbered lists or bullet points.`;
 
 /**
- * Build a compact catalog of all documents (title, path, category, size).
+ * Build a structured catalog from the document index.
  * This is what Claude sees in Pass 1 to decide which documents to retrieve.
+ * Much richer than raw previews — includes topics, regulations, and packages.
  */
-function buildDocumentCatalog(documents) {
+function buildDocumentCatalog() {
+    const index = getDocumentIndex();
     const entries = [];
-    for (const [docPath, doc] of Object.entries(documents)) {
+
+    for (const [docPath, idx] of Object.entries(index)) {
         const fileName = path.basename(docPath, '.md');
-        const tokensEst = Math.ceil(doc.content.length / 4);
-        // Extract first ~200 chars as a preview/summary
-        const preview = doc.content
-            .replace(/^#+ .+\n*/gm, '') // strip markdown headings
-            .replace(/\n+/g, ' ')        // collapse newlines
-            .trim()
-            .substring(0, 200);
-        entries.push(`- [${fileName}] (${docPath}) | Category: ${doc.category} | ~${tokensEst} tokens\n  Preview: ${preview}...`);
+        let entry = `- [${fileName}] (${docPath})\n`;
+        entry += `  Category: ${idx.category} | ~${idx.tokenEstimate} tokens\n`;
+
+        if (idx.summary) {
+            entry += `  Summary: ${idx.summary}\n`;
+        }
+        if (idx.headings.length > 0) {
+            entry += `  Sections: ${idx.headings.join(' | ')}\n`;
+        }
+        if (idx.topics.length > 0) {
+            entry += `  Topics: ${idx.topics.join(', ')}\n`;
+        }
+        if (idx.regulations.length > 0) {
+            entry += `  Regulations: ${idx.regulations.join(', ')}\n`;
+        }
+        if (idx.packages.length > 0) {
+            entry += `  Service Packages: ${idx.packages.join(', ')}\n`;
+        }
+
+        entries.push(entry);
     }
+
     return entries.join('\n');
 }
 
@@ -186,7 +203,7 @@ async function chat(message, history = []) {
         retrievalMethod = 'two-pass';
         console.log(`[CHAT] Knowbase too large (${totalTokens} tokens), using two-pass retrieval`);
 
-        const catalog = buildDocumentCatalog(allDocs);
+        const catalog = buildDocumentCatalog();
         const selectedPaths = await selectDocuments(message, history, catalog, allDocCount);
 
         if (selectedPaths) {

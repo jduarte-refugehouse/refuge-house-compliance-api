@@ -21,6 +21,8 @@ const { owner: REPO_OWNER, repo: REPO_NAME } = parseRepoUrl(KNOWBASE_REPO_URL);
 
 // In-memory document cache: { relativePath: { content, lastModified, sizeBytes, category } }
 let _documentCache = {};
+// Document index: { relativePath: { summary, headings, topics, regulations, packages, tokenEstimate } }
+let _documentIndex = {};
 let _lastRefresh = 0;
 let _manifest = null;
 
@@ -97,8 +99,9 @@ async function syncKnowbase() {
 
     await Promise.all(fetchPromises);
 
-    // Load manifest if it exists
+    // Load manifest if it exists, and build the document index
     loadManifest(tree);
+    buildDocumentIndex();
     _lastRefresh = Date.now();
 
     const categories = getCategorySummary();
@@ -144,6 +147,131 @@ function categorize(topDir, relativePath) {
     if (lower.includes('template') || lower.includes('form')) return 'template';
     if (lower.includes('training')) return 'training';
     return 'general';
+}
+
+/**
+ * Build an index entry for a single document by extracting structured metadata
+ * from its markdown content. This runs during sync and powers the two-pass
+ * retrieval in chat.
+ */
+function indexDocument(docPath, doc) {
+    const content = doc.content;
+
+    // Extract markdown headings
+    const headings = [];
+    const headingRegex = /^#{1,4}\s+(.+)$/gm;
+    let match;
+    while ((match = headingRegex.exec(content)) !== null) {
+        headings.push(match[1].trim());
+    }
+
+    // Extract the first meaningful paragraph as a summary
+    const paragraphs = content
+        .replace(/^#{1,6}\s+.+$/gm, '') // strip headings
+        .split(/\n{2,}/)
+        .map(p => p.trim())
+        .filter(p => p.length > 30 && !p.startsWith('|') && !p.startsWith('-'));
+    const summary = paragraphs[0]
+        ? paragraphs[0].replace(/\n/g, ' ').substring(0, 300)
+        : '';
+
+    // Extract regulation references (TAC sections, RCC, DFPS, etc.)
+    const regulations = [];
+    const regPatterns = [
+        /TAC\s*§?\s*\d+\.\d+/gi,
+        /(?:26\s+)?TAC\s+(?:Chapter\s+)?\d+/gi,
+        /§\s*\d+\.\d+/g,
+        /DFPS\s+\w+/gi,
+        /RCC\s+(?:contract|section|requirement)/gi,
+        /T3C\s+(?:Blueprint|contract|requirement)/gi,
+        /CANS/g,
+        /ISP/g,
+        /FSFN/g
+    ];
+    for (const pattern of regPatterns) {
+        let m;
+        while ((m = pattern.exec(content)) !== null) {
+            const ref = m[0].trim();
+            if (!regulations.includes(ref)) regulations.push(ref);
+        }
+    }
+
+    // Extract service package references
+    const packages = [];
+    const packagePatterns = [
+        { pattern: /IDD|Autism|intellectual\s+disabilit/gi, name: 'IDD/Autism' },
+        { pattern: /Mental\s+Health|MH\s+package/gi, name: 'Mental Health' },
+        { pattern: /Kinship/gi, name: 'Kinship' },
+        { pattern: /SIL|Supervised\s+Independent\s+Living/gi, name: 'SIL' },
+        { pattern: /HCS|Home\s+and\s+Community/gi, name: 'HCS' },
+        { pattern: /STAR\s+Health/gi, name: 'STAR Health' },
+        { pattern: /T3C/gi, name: 'T3C' },
+        { pattern: /FFCC|Foster\s+Family/gi, name: 'Foster Family' }
+    ];
+    for (const { pattern, name } of packagePatterns) {
+        if (pattern.test(content) && !packages.includes(name)) {
+            packages.push(name);
+        }
+    }
+
+    // Extract key topics from headings and content
+    const topicPatterns = [
+        /discharge|transition/gi, /intake|admission|placement/gi,
+        /medication|prescription|OTC/gi, /assessment|evaluation|CANS/gi,
+        /training|orientation/gi, /supervision|monitoring/gi,
+        /incident|reporting|abuse|neglect/gi, /contact|visitation|family/gi,
+        /case\s*management|case\s*plan/gi, /medical|health|dental/gi,
+        /education|school/gi, /behavior|crisis|restraint/gi,
+        /documentation|record|file/gi, /background\s*check|clearance/gi,
+        /staffing|personnel|employee/gi, /rights|grievance|complaint/gi,
+        /safety|emergency|evacuation/gi, /nutrition|meal|diet/gi,
+        /transportation/gi, /clothing|allowance|personal/gi,
+        /court|legal|hearing/gi, /permanency|adoption|reunification/gi,
+        /ISP|service\s*plan|treatment\s*plan/gi,
+        /foster\s*(?:parent|home|care)/gi, /respite/gi
+    ];
+
+    const topics = [];
+    for (const pattern of topicPatterns) {
+        if (pattern.test(content)) {
+            // Use the first match as the topic label
+            pattern.lastIndex = 0;
+            const m = pattern.exec(content);
+            if (m) {
+                const topic = m[0].toLowerCase().trim();
+                if (!topics.includes(topic)) topics.push(topic);
+            }
+        }
+    }
+
+    return {
+        summary,
+        headings: headings.slice(0, 15), // cap at 15 to keep index compact
+        topics,
+        regulations: regulations.slice(0, 20),
+        packages,
+        tokenEstimate: Math.ceil(content.length / 4),
+        category: doc.category
+    };
+}
+
+/**
+ * Build the document index for all cached documents.
+ * Called after syncing from GitHub.
+ */
+function buildDocumentIndex() {
+    _documentIndex = {};
+    for (const [docPath, doc] of Object.entries(_documentCache)) {
+        _documentIndex[docPath] = indexDocument(docPath, doc);
+    }
+    console.log(`[KNOWBASE] Built index for ${Object.keys(_documentIndex).length} documents`);
+}
+
+/**
+ * Get the document index.
+ */
+function getDocumentIndex() {
+    return _documentIndex;
 }
 
 /**
@@ -278,6 +406,7 @@ module.exports = {
     getDocumentsByPath,
     getDocumentsByCategory,
     getAllDocuments,
+    getDocumentIndex,
     getCategorySummary,
     refreshIfStale,
     formatDocumentsAsContext,
