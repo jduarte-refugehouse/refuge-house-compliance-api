@@ -35,7 +35,7 @@ async function syncKnowbase() {
             }
         }
         const git = simpleGit();
-        await git.clone(KNOWBASE_REPO, KNOWBASE_DIR, ['--depth', '1']);
+        await git.clone(KNOWBASE_REPO, KNOWBASE_DIR);
     }
 
     // Reload documents and manifest
