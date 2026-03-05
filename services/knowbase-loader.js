@@ -10,7 +10,8 @@ const crypto = require('crypto');
 // Parse owner/repo from the repo URL
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
 const KNOWBASE_BRANCH = process.env.KNOWBASE_BRANCH || 'main';
-const REFRESH_INTERVAL_MS = parseInt(process.env.KNOWBASE_REFRESH_MINUTES || '30', 10) * 60 * 1000;
+// Default: check for updates once per day (1440 minutes). Override with KNOWBASE_REFRESH_MINUTES.
+const REFRESH_INTERVAL_MS = parseInt(process.env.KNOWBASE_REFRESH_MINUTES || '1440', 10) * 60 * 1000;
 
 // Extract owner/repo from URL (handles both .git and non-.git URLs)
 function parseRepoUrl(url) {
@@ -340,12 +341,16 @@ function indexDocument(docPath, doc) {
  * Build the document index for all cached documents.
  * Uses a persistent cache on disk — only re-indexes documents whose content has changed.
  * Regulatory/external docs that don't change get indexed once and cached indefinitely.
+ *
+ * @param {boolean} forceReindex - If true, ignore cache and re-index everything
+ * @returns {{ total: number, reused: number, reindexed: number, changed: string[] }}
  */
-function buildDocumentIndex() {
-    const cachedIndex = loadIndexCache();
+function buildDocumentIndex(forceReindex = false) {
+    const cachedIndex = forceReindex ? {} : loadIndexCache();
     const newIndex = {};
     let reused = 0;
     let reindexed = 0;
+    const changed = [];
 
     for (const [docPath, doc] of Object.entries(_documentCache)) {
         const hash = contentHash(doc.content);
@@ -359,14 +364,21 @@ function buildDocumentIndex() {
             // New or changed document — index it
             newIndex[docPath] = indexDocument(docPath, doc);
             reindexed++;
+            changed.push(docPath);
         }
     }
 
     _documentIndex = newIndex;
-    console.log(`[KNOWBASE] Document index: ${reused} cached, ${reindexed} re-indexed (${Object.keys(newIndex).length} total)`);
+    const total = Object.keys(newIndex).length;
+    console.log(`[KNOWBASE] Document index: ${reused} cached, ${reindexed} re-indexed (${total} total)`);
+    if (changed.length > 0) {
+        console.log(`[KNOWBASE] Changed documents: ${changed.join(', ')}`);
+    }
 
     // Persist to disk for next startup
     saveIndexCache();
+
+    return { total, reused, reindexed, changed };
 }
 
 /**
@@ -503,6 +515,7 @@ function searchDocuments(keywords) {
 
 module.exports = {
     syncKnowbase,
+    buildDocumentIndex,
     getManifest,
     getDocument,
     getDocumentsByPath,

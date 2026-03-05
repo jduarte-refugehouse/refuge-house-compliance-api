@@ -1,7 +1,7 @@
 // routes/documents.js - Browse and inspect loaded knowbase documents
 const express = require('express');
 const router = express.Router();
-const { getAllDocuments, getDocument, getDocumentIndex, getCategorySummary, searchDocuments, estimateTokens } = require('../services/knowbase-loader');
+const { getAllDocuments, getDocument, getDocumentIndex, buildDocumentIndex, getCategorySummary, searchDocuments, estimateTokens } = require('../services/knowbase-loader');
 const { listEvaluationTypes } = require('../services/context-builder');
 
 // GET /api/documents - List all loaded documents with categories
@@ -70,19 +70,36 @@ router.get('/index', (req, res) => {
     });
 });
 
-// POST /api/documents/refresh - Force a knowbase refresh
+// POST /api/documents/refresh - Fetch latest documents from GitHub and re-index any changes
 router.post('/refresh', async (req, res) => {
     try {
         const { syncKnowbase } = require('../services/knowbase-loader');
         await syncKnowbase();
         const docs = getAllDocuments();
+        const index = getDocumentIndex();
         res.json({
             status: 'refreshed',
-            documentsLoaded: Object.keys(docs).length
+            documentsLoaded: Object.keys(docs).length,
+            documentsIndexed: Object.keys(index).length
         });
     } catch (err) {
         console.error('[DOCUMENTS] Refresh failed:', err);
         res.status(500).json({ error: 'Failed to refresh knowbase', message: err.message });
+    }
+});
+
+// POST /api/documents/reindex - Force a full re-index of all documents (ignores cache)
+// Use this after updating the indexing logic or when you suspect the index is stale.
+router.post('/reindex', (req, res) => {
+    try {
+        const stats = buildDocumentIndex(true); // force = true
+        res.json({
+            status: 'reindexed',
+            ...stats
+        });
+    } catch (err) {
+        console.error('[DOCUMENTS] Reindex failed:', err);
+        res.status(500).json({ error: 'Failed to reindex documents', message: err.message });
     }
 });
 
