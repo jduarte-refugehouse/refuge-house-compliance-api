@@ -4,3 +4,6 @@ node_modules/
 
 # The knowbase directory is cloned at runtime — don't commit it here
 knowbase/
+
+# Runtime cache (document index, etc.)
+data/

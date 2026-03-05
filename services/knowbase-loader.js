@@ -4,6 +4,8 @@
 // The knowbase is the single source of truth for all policy documents.
 
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 
 // Parse owner/repo from the repo URL
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
@@ -21,10 +23,52 @@ const { owner: REPO_OWNER, repo: REPO_NAME } = parseRepoUrl(KNOWBASE_REPO_URL);
 
 // In-memory document cache: { relativePath: { content, lastModified, sizeBytes, category } }
 let _documentCache = {};
-// Document index: { relativePath: { summary, headings, topics, regulations, packages, tokenEstimate } }
+// Document index: { relativePath: { summary, headings, topics, regulations, packages, tokenEstimate, contentHash } }
 let _documentIndex = {};
 let _lastRefresh = 0;
 let _manifest = null;
+
+// Persistent index cache — survives restarts, avoids re-indexing unchanged documents
+const INDEX_CACHE_DIR = process.env.INDEX_CACHE_DIR || path.join(__dirname, '..', 'data');
+const INDEX_CACHE_FILE = path.join(INDEX_CACHE_DIR, 'document-index-cache.json');
+
+/**
+ * Compute a content hash for a document (used to detect changes).
+ */
+function contentHash(content) {
+    return crypto.createHash('sha256').update(content).digest('hex').substring(0, 16);
+}
+
+/**
+ * Load the persistent index cache from disk.
+ */
+function loadIndexCache() {
+    try {
+        if (fs.existsSync(INDEX_CACHE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(INDEX_CACHE_FILE, 'utf-8'));
+            console.log(`[KNOWBASE] Loaded index cache with ${Object.keys(data).length} entries`);
+            return data;
+        }
+    } catch (err) {
+        console.warn(`[KNOWBASE] Failed to load index cache: ${err.message}`);
+    }
+    return {};
+}
+
+/**
+ * Save the document index to the persistent cache on disk.
+ */
+function saveIndexCache() {
+    try {
+        if (!fs.existsSync(INDEX_CACHE_DIR)) {
+            fs.mkdirSync(INDEX_CACHE_DIR, { recursive: true });
+        }
+        fs.writeFileSync(INDEX_CACHE_FILE, JSON.stringify(_documentIndex, null, 2));
+        console.log(`[KNOWBASE] Saved index cache (${Object.keys(_documentIndex).length} entries)`);
+    } catch (err) {
+        console.warn(`[KNOWBASE] Failed to save index cache: ${err.message}`);
+    }
+}
 
 /**
  * Make a GitHub API request. Uses GITHUB_TOKEN if available (for private repos).
@@ -287,20 +331,42 @@ function indexDocument(docPath, doc) {
         regulations: regulations.slice(0, 30),
         packages,
         tokenEstimate: Math.ceil(content.length / 4),
-        category: doc.category
+        category: doc.category,
+        contentHash: contentHash(content)
     };
 }
 
 /**
  * Build the document index for all cached documents.
- * Called after syncing from GitHub.
+ * Uses a persistent cache on disk — only re-indexes documents whose content has changed.
+ * Regulatory/external docs that don't change get indexed once and cached indefinitely.
  */
 function buildDocumentIndex() {
-    _documentIndex = {};
+    const cachedIndex = loadIndexCache();
+    const newIndex = {};
+    let reused = 0;
+    let reindexed = 0;
+
     for (const [docPath, doc] of Object.entries(_documentCache)) {
-        _documentIndex[docPath] = indexDocument(docPath, doc);
+        const hash = contentHash(doc.content);
+        const cached = cachedIndex[docPath];
+
+        if (cached && cached.contentHash === hash) {
+            // Content unchanged — reuse cached index entry
+            newIndex[docPath] = cached;
+            reused++;
+        } else {
+            // New or changed document — index it
+            newIndex[docPath] = indexDocument(docPath, doc);
+            reindexed++;
+        }
     }
-    console.log(`[KNOWBASE] Built index for ${Object.keys(_documentIndex).length} documents`);
+
+    _documentIndex = newIndex;
+    console.log(`[KNOWBASE] Document index: ${reused} cached, ${reindexed} re-indexed (${Object.keys(newIndex).length} total)`);
+
+    // Persist to disk for next startup
+    saveIndexCache();
 }
 
 /**
