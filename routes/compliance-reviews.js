@@ -132,4 +132,18 @@ router.post('/:id/recommend-sunset', async (req, res) => {
     }
 });
 
+// POST /api/compliance/reviews/:id/ai-analysis — AI-assisted review against mapped regulations
+router.post('/:id/ai-analysis', async (req, res) => {
+    try {
+        const { analyzeReview } = require('../services/ai-review');
+        const analysis = await analyzeReview(parseInt(req.params.id), {
+            focusAreas: req.body.focus_areas
+        });
+        res.json(analysis);
+    } catch (err) {
+        console.error('[COMPLIANCE-REVIEWS] AI analysis failed:', err);
+        res.status(500).json({ error: 'Failed to run AI analysis', message: err.message });
+    }
+});
+
 module.exports = router;

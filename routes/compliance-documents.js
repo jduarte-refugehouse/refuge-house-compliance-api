@@ -154,4 +154,29 @@ router.post('/:id/regulations', async (req, res) => {
     }
 });
 
+// GET /api/compliance/documents/:id/versions — Version history (approved reviews with commit SHAs)
+router.get('/:id/versions', async (req, res) => {
+    try {
+        const versionService = require('../services/version-tracking');
+        const versions = await versionService.getVersionHistory(parseInt(req.params.id));
+        res.json(versions);
+    } catch (err) {
+        console.error('[COMPLIANCE-DOCS] Version history failed:', err);
+        res.status(500).json({ error: 'Failed to get version history', message: err.message });
+    }
+});
+
+// GET /api/compliance/documents/:id/diff — Diff between current knowbase and last approved version
+router.get('/:id/diff', async (req, res) => {
+    try {
+        const versionService = require('../services/version-tracking');
+        const report = await versionService.getDiffReport(parseInt(req.params.id));
+        if (!report) return res.status(404).json({ error: 'Document not found' });
+        res.json(report);
+    } catch (err) {
+        console.error('[COMPLIANCE-DOCS] Diff failed:', err);
+        res.status(500).json({ error: 'Failed to get diff', message: err.message });
+    }
+});
+
 module.exports = router;

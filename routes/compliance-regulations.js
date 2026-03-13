@@ -19,6 +19,27 @@ router.get('/', async (req, res) => {
     }
 });
 
+// POST /api/compliance/regulations/impact-analysis — AI-assisted impact analysis for a regulatory change
+// (Must be registered before /:id routes so Express doesn't match "impact-analysis" as an id)
+router.post('/impact-analysis', async (req, res) => {
+    try {
+        const { regulatory_source_id, change_description } = req.body;
+        if (!regulatory_source_id || !change_description) {
+            return res.status(400).json({ error: 'Required fields: regulatory_source_id, change_description' });
+        }
+        const { analyzeRegulatoryImpact } = require('../services/ai-review');
+        const analysis = await analyzeRegulatoryImpact(
+            regulatory_source_id,
+            change_description,
+            { focusAreas: req.body.focus_areas }
+        );
+        res.json(analysis);
+    } catch (err) {
+        console.error('[COMPLIANCE-REGS] Impact analysis failed:', err);
+        res.status(500).json({ error: 'Failed to run impact analysis', message: err.message });
+    }
+});
+
 // GET /api/compliance/regulations/:id
 router.get('/:id', async (req, res) => {
     try {
