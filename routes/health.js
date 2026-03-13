@@ -44,7 +44,18 @@ router.get('/health', async (req, res) => {
             compliance_regulations: 'GET /api/compliance/regulations',
             compliance_reviews: 'GET /api/compliance/reviews',
             compliance_dashboard: 'GET /api/compliance/dashboard',
-            compliance_timeline: 'GET /api/compliance/timeline'
+            compliance_timeline: 'GET /api/compliance/timeline',
+            ai_review: 'POST /api/compliance/reviews/:id/ai-analysis',
+            impact_analysis: 'POST /api/compliance/regulations/impact-analysis',
+            version_history: 'GET /api/compliance/documents/:id/versions',
+            document_diff: 'GET /api/compliance/documents/:id/diff',
+            webhooks_sync: 'POST /api/compliance/webhooks/sync',
+            webhooks_reminders: 'POST /api/compliance/webhooks/reminder-check',
+            webhooks_status: 'GET /api/compliance/webhooks/status'
+        },
+        pulse_integration: {
+            webhook_configured: !!process.env.PULSE_WEBHOOK_URL,
+            auto_sync: true
         },
         anthropic: {
             configured: !!process.env.ANTHROPIC_COMPLIANCE_KEY,

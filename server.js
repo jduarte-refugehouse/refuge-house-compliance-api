@@ -71,6 +71,10 @@ app.use('/api/compliance/reviews', complianceReviewRoutes);    // Review workflo
 app.use('/api/compliance/reminders', complianceReminderRoutes); // Reminder config + check trigger
 app.use('/api/compliance', complianceDashboardRoutes);         // Dashboard, timeline, history
 
+// Routes — Pulse Integration (Phase 7)
+const complianceWebhookRoutes = require('./routes/compliance-webhooks');
+app.use('/api/compliance/webhooks', complianceWebhookRoutes); // Pulse webhooks + sync triggers
+
 // Startup
 async function start() {
     // Sync knowbase repo on startup

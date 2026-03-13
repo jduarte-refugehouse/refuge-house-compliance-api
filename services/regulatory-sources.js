@@ -183,6 +183,15 @@ async function recordChange(regulatorySourceId, { changeDescription, userId = nu
         affectedDocIds.push(doc.document_id);
     }
 
+    // Notify Pulse about the regulatory change
+    try {
+        const { notifyRegulatoryChange } = require('./pulse-notifier');
+        const regulation = await getById(regulatorySourceId);
+        await notifyRegulatoryChange(regulation, mapped.recordset);
+    } catch (err) {
+        console.warn('[REGULATORY] Failed to notify Pulse:', err.message);
+    }
+
     return { affectedDocumentIds: affectedDocIds, affectedDocuments: mapped.recordset };
 }
 
