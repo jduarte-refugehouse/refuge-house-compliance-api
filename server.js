@@ -45,7 +45,7 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
-// Routes
+// Routes — Knowledge Assistant (Phase 1)
 const healthRoutes = require('./routes/health');
 const chatRoutes = require('./routes/chat');
 const generateRoutes = require('./routes/generate');
@@ -57,6 +57,23 @@ app.use('/api/chat', chatRoutes);             // Natural language policy Q&A
 app.use('/api/generate', generateRoutes);     // Plan/document generation from child data
 app.use('/api/evaluate', evaluateRoutes);     // Structured compliance evaluations
 app.use('/api/documents', documentsRoutes);   // Browse loaded knowbase documents
+
+// Routes — Compliance Workflow (Phase 2)
+const complianceDocRoutes = require('./routes/compliance-documents');
+const complianceRegRoutes = require('./routes/compliance-regulations');
+const complianceReviewRoutes = require('./routes/compliance-reviews');
+const complianceReminderRoutes = require('./routes/compliance-reminders');
+const complianceDashboardRoutes = require('./routes/compliance-dashboard');
+
+app.use('/api/compliance/documents', complianceDocRoutes);     // Document registry + dependencies + regulatory mappings
+app.use('/api/compliance/regulations', complianceRegRoutes);   // Regulatory sources + change tracking
+app.use('/api/compliance/reviews', complianceReviewRoutes);    // Review workflow + approval chains
+app.use('/api/compliance/reminders', complianceReminderRoutes); // Reminder config + check trigger
+app.use('/api/compliance', complianceDashboardRoutes);         // Dashboard, timeline, history
+
+// Routes — Pulse Integration (Phase 7)
+const complianceWebhookRoutes = require('./routes/compliance-webhooks');
+app.use('/api/compliance/webhooks', complianceWebhookRoutes); // Pulse webhooks + sync triggers
 
 // Startup
 async function start() {
