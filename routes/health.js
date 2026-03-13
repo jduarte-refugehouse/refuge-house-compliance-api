@@ -3,9 +3,22 @@ const express = require('express');
 const router = express.Router();
 const { getAllDocuments, getCategorySummary, getManifest, estimateTokens } = require('../services/knowbase-loader');
 
-router.get('/health', (req, res) => {
+router.get('/health', async (req, res) => {
     const docs = getAllDocuments();
     const docCount = Object.keys(docs).length;
+
+    // Check database connectivity
+    let dbStatus = 'not configured';
+    try {
+        if (process.env.COMPLIANCE_DB_PASSWORD || process.env.COMPLIANCE_DB_SERVER) {
+            const { poolPromise } = require('../services/db');
+            const pool = await poolPromise;
+            await pool.request().query('SELECT 1');
+            dbStatus = 'connected';
+        }
+    } catch (err) {
+        dbStatus = `error: ${err.message}`;
+    }
 
     res.json({
         status: 'ok',
@@ -18,11 +31,20 @@ router.get('/health', (req, res) => {
             manifestLoaded: !!getManifest(),
             status: docCount > 0 ? 'ready' : 'empty'
         },
+        database: {
+            status: dbStatus,
+            name: process.env.COMPLIANCE_DB_NAME || 'RadiusCompliance'
+        },
         endpoints: {
             chat: 'POST /api/chat',
             generate: 'POST /api/generate/service-plan',
             evaluate: 'POST /api/evaluate/:type',
-            documents: 'GET /api/documents'
+            documents: 'GET /api/documents',
+            compliance_documents: 'GET /api/compliance/documents',
+            compliance_regulations: 'GET /api/compliance/regulations',
+            compliance_reviews: 'GET /api/compliance/reviews',
+            compliance_dashboard: 'GET /api/compliance/dashboard',
+            compliance_timeline: 'GET /api/compliance/timeline'
         },
         anthropic: {
             configured: !!process.env.ANTHROPIC_COMPLIANCE_KEY,
