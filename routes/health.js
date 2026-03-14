@@ -40,6 +40,7 @@ router.get('/health', async (req, res) => {
             generate: 'POST /api/generate/service-plan',
             evaluate: 'POST /api/evaluate/:type',
             documents: 'GET /api/documents',
+            documents_directory: 'GET /api/documents/directory',
             compliance_documents: 'GET /api/compliance/documents',
             compliance_regulations: 'GET /api/compliance/regulations',
             compliance_reviews: 'GET /api/compliance/reviews',
