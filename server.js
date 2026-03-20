@@ -22,6 +22,26 @@ const { syncKnowbase } = require('./services/knowbase-loader');
 const app = express();
 const PORT = process.env.PORT || 3100;
 
+// CORS - allow Pulse front-ends
+const ALLOWED_ORIGINS = [
+    'https://pulse.refugehouse.org',
+    'https://pulse.staging.refugehouse.org',
+];
+if (process.env.NODE_ENV !== 'production') {
+    ALLOWED_ORIGINS.push('http://localhost:5173', 'http://localhost:3000');
+}
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (ALLOWED_ORIGINS.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+        res.setHeader('Access-Control-Max-Age', '86400');
+    }
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+});
+
 // Middleware
 app.use(express.json({ limit: '5mb' }));
 
@@ -45,7 +65,7 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
-// Routes
+// Routes — Knowledge Assistant (Phase 1)
 const healthRoutes = require('./routes/health');
 const chatRoutes = require('./routes/chat');
 const generateRoutes = require('./routes/generate');
@@ -57,6 +77,23 @@ app.use('/api/chat', chatRoutes);             // Natural language policy Q&A
 app.use('/api/generate', generateRoutes);     // Plan/document generation from child data
 app.use('/api/evaluate', evaluateRoutes);     // Structured compliance evaluations
 app.use('/api/documents', documentsRoutes);   // Browse loaded knowbase documents
+
+// Routes — Compliance Workflow (Phase 2)
+const complianceDocRoutes = require('./routes/compliance-documents');
+const complianceRegRoutes = require('./routes/compliance-regulations');
+const complianceReviewRoutes = require('./routes/compliance-reviews');
+const complianceReminderRoutes = require('./routes/compliance-reminders');
+const complianceDashboardRoutes = require('./routes/compliance-dashboard');
+
+app.use('/api/compliance/documents', complianceDocRoutes);     // Document registry + dependencies + regulatory mappings
+app.use('/api/compliance/regulations', complianceRegRoutes);   // Regulatory sources + change tracking
+app.use('/api/compliance/reviews', complianceReviewRoutes);    // Review workflow + approval chains
+app.use('/api/compliance/reminders', complianceReminderRoutes); // Reminder config + check trigger
+app.use('/api/compliance', complianceDashboardRoutes);         // Dashboard, timeline, history
+
+// Routes — Pulse Integration (Phase 7)
+const complianceWebhookRoutes = require('./routes/compliance-webhooks');
+app.use('/api/compliance/webhooks', complianceWebhookRoutes); // Pulse webhooks + sync triggers
 
 // Startup
 async function start() {

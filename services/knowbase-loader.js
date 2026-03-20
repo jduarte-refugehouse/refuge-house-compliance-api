@@ -159,6 +159,18 @@ async function syncKnowbase() {
     } else {
         console.log(`[KNOWBASE] No document-manifest.json found (chat will use all docs, evaluations will use all docs)`);
     }
+
+    // Sync with compliance document registry (Phase 6)
+    // Runs in background — doesn't block the sync response
+    try {
+        const { syncComplianceRegistry } = require('./knowbase-sync');
+        syncComplianceRegistry().catch(err => {
+            console.error('[KNOWBASE] Compliance registry sync failed:', err.message);
+        });
+    } catch (err) {
+        // knowbase-sync may not be available if db isn't configured yet
+        console.warn('[KNOWBASE] Compliance registry sync not available:', err.message);
+    }
 }
 
 /**

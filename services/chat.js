@@ -26,6 +26,8 @@ const {
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_COMPLIANCE_KEY;
 const CLAUDE_MODEL = process.env.ANTHROPIC_COMPLIANCE_MODEL || 'claude-sonnet-4-5';
+// Fast model for document selection (Pass 1). Haiku is ~10x faster and much cheaper for this task.
+const CLAUDE_FAST_MODEL = process.env.ANTHROPIC_FAST_MODEL || 'claude-haiku-4-5-20251001';
 
 // Token budget for the answer pass. Leave room for system prompt, messages, and response.
 const MAX_CONTEXT_TOKENS = 150000;
@@ -136,7 +138,7 @@ Example response:
 ["policies/FC-T3C-01-case-management.md", "regulatory/TAC-749-subchapter-m.md"]`;
 
     const response = await client.messages.create({
-        model: CLAUDE_MODEL,
+        model: CLAUDE_FAST_MODEL,
         max_tokens: 2048,
         system: selectionPrompt,
         messages: [{
@@ -373,4 +375,136 @@ function keywordSelect(message, history, allDocs) {
     return selected;
 }
 
-module.exports = { chat };
+/**
+ * Handle a chat message with streaming. Returns an async generator that yields
+ * text chunks as they arrive from Claude.
+ *
+ * @param {string} message - The user's question
+ * @param {Array<{role: string, content: string}>} history - Previous messages
+ * @yields {{ type: string, data: any }} Events: 'meta', 'text', 'done', 'error'
+ */
+async function* chatStream(message, history = []) {
+    await refreshIfStale();
+
+    const allDocs = getAllDocuments();
+    const allDocCount = Object.keys(allDocs).length;
+    const totalTokens = estimateTokens(allDocs);
+
+    console.log(`[CHAT] Question: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`);
+    console.log(`[CHAT] Full knowbase: ${allDocCount} documents, ~${totalTokens} estimated tokens`);
+
+    if (allDocCount === 0) {
+        yield { type: 'error', data: 'No documents loaded. The knowbase may not have synced.' };
+        return;
+    }
+
+    let documentsToInclude;
+    let retrievalMethod;
+
+    if (totalTokens <= MAX_CONTEXT_TOKENS) {
+        documentsToInclude = allDocs;
+        retrievalMethod = 'full';
+        console.log(`[CHAT] All docs fit within budget, including all ${allDocCount}`);
+    } else {
+        retrievalMethod = 'two-pass';
+        console.log(`[CHAT] Knowbase too large (${totalTokens} tokens), using two-pass retrieval`);
+
+        // Use a fast model for document selection (Pass 1)
+        const catalog = buildDocumentCatalog();
+        const selectedPaths = await selectDocuments(message, history, catalog, allDocCount);
+
+        if (selectedPaths) {
+            documentsToInclude = {};
+            let currentTokens = 0;
+
+            for (const docPath of selectedPaths) {
+                const doc = allDocs[docPath];
+                if (!doc) continue;
+                const docTokens = Math.ceil(doc.content.length / 4);
+                if (currentTokens + docTokens > MAX_CONTEXT_TOKENS) break;
+                documentsToInclude[docPath] = doc;
+                currentTokens += docTokens;
+            }
+
+            console.log(`[CHAT] Pass 1 selected ${selectedPaths.length} docs, included ${Object.keys(documentsToInclude).length}`);
+        } else {
+            retrievalMethod = 'keyword-fallback';
+            documentsToInclude = keywordSelect(message, history, allDocs);
+        }
+    }
+
+    const docCount = Object.keys(documentsToInclude).length;
+
+    // Send metadata before streaming starts
+    yield {
+        type: 'meta',
+        data: {
+            documentsInContext: docCount,
+            totalDocumentsAvailable: allDocCount,
+            retrievalMethod,
+            model: CLAUDE_MODEL
+        }
+    };
+
+    let contextNote = '';
+    if (retrievalMethod !== 'full') {
+        contextNote = `Note: ${docCount} of ${allDocCount} documents from the policy library were selected as relevant to this question. If you cannot find the answer in the provided documents, say so clearly.`;
+    }
+
+    const documentContext = formatDocumentsAsContext(
+        documentsToInclude,
+        '=== REFUGE HOUSE POLICY AND COMPLIANCE KNOWLEDGE BASE ===\n' +
+        'The following documents are from the policy library. ' +
+        'Use these as your sole source of truth when answering questions.\n' +
+        (contextNote ? `\n${contextNote}\n` : '')
+    );
+
+    const messages = [];
+    if (history.length > 0) {
+        let contextInjected = false;
+        for (const msg of history) {
+            if (!contextInjected && msg.role === 'user') {
+                messages.push({ role: 'user', content: documentContext + '\n\n' + msg.content });
+                contextInjected = true;
+            } else {
+                messages.push({ role: msg.role, content: msg.content });
+            }
+        }
+        messages.push({ role: 'user', content: message });
+    } else {
+        messages.push({ role: 'user', content: documentContext + '\n\nQuestion from staff member:\n' + message });
+    }
+
+    // Stream from Claude
+    const client = getClient();
+    const startTime = Date.now();
+
+    const stream = client.messages.stream({
+        model: CLAUDE_MODEL,
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        messages
+    });
+
+    for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+            yield { type: 'text', data: event.delta.text };
+        }
+    }
+
+    const finalMessage = await stream.finalMessage();
+    const elapsed = Date.now() - startTime;
+
+    console.log(`[CHAT] Stream completed in ${elapsed}ms, ${finalMessage.usage?.input_tokens || '?'} input / ${finalMessage.usage?.output_tokens || '?'} output tokens`);
+
+    yield {
+        type: 'done',
+        data: {
+            responseTimeMs: elapsed,
+            inputTokens: finalMessage.usage?.input_tokens || null,
+            outputTokens: finalMessage.usage?.output_tokens || null
+        }
+    };
+}
+
+module.exports = { chat, chatStream };
