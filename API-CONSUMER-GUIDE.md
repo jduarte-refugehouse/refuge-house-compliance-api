@@ -49,6 +49,9 @@ const complianceApi = {
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/health` | Service status (no auth required) |
+| **Public Document Access (no auth)** | | |
+| GET | `/public/documents` | List all documents with slugs and public URLs |
+| GET | `/public/documents/:slug` | Rendered HTML page (or JSON/markdown via `?format=`) |
 | **Knowledge Assistant** | | |
 | POST | `/api/chat` | Natural language policy Q&A |
 | POST | `/api/chat/stream` | Streaming policy Q&A (SSE) |
@@ -375,6 +378,84 @@ Common HTTP status codes:
 - `404` — Resource not found
 - `409` — Conflict (duplicate resource)
 - `500` — Internal server error
+
+---
+
+## Public Document Access (No Authentication)
+
+These endpoints live under `/public/` and require **no API key**. They are designed for:
+- Sharing documents with foster parents, external stakeholders, or auditors
+- Embedding documents in external apps (e.g., foster parent portal)
+- Linking directly to the current version of a policy or plan
+
+### How Slugs Work
+
+Every document in the knowbase gets an auto-generated slug from its filename:
+- `plans/Emergency Response Disaster Recovery and Business Continuity Plan.md` -> `emergency-response-disaster-recovery-and-business-continuity-plan`
+- `policies/medication-management.md` -> `medication-management`
+
+### `GET /public/documents` — List all documents with public URLs
+
+Returns every loaded document with its slug, path, title, and direct URL.
+
+```json
+{
+  "count": 42,
+  "documents": [
+    {
+      "slug": "emergency-response-disaster-recovery-and-business-continuity-plan",
+      "path": "plans/Emergency Response Disaster Recovery and Business Continuity Plan.md",
+      "title": "Emergency Response Disaster Recovery and Business Continuity Plan",
+      "category": "general",
+      "lastModified": "2026-03-25T...",
+      "url": "/public/documents/emergency-response-disaster-recovery-and-business-continuity-plan",
+      "summary": "This plan outlines..."
+    }
+  ]
+}
+```
+
+### `GET /public/documents/:slug` — View a document
+
+Returns a **rendered HTML page** by default (self-contained, branded, print-friendly).
+
+**Formats** (via `?format=` query param):
+
+| Format | Content-Type | Use Case |
+|--------|-------------|----------|
+| `html` (default) | `text/html` | Direct link, browser viewing, print |
+| `json` | `application/json` | App embedding (returns `{ slug, path, title, content }`) |
+| `markdown` | `text/markdown` | Raw markdown for client-side rendering |
+
+**Examples:**
+
+```
+# Shareable link (opens branded HTML page in browser)
+https://compliance-api.refugehouse.org/public/documents/emergency-response-disaster-recovery-and-business-continuity-plan
+
+# JSON for app embedding
+GET /public/documents/emergency-response-disaster-recovery-and-business-continuity-plan?format=json
+
+# Raw markdown
+GET /public/documents/emergency-response-disaster-recovery-and-business-continuity-plan?format=markdown
+```
+
+**Pulse integration patterns:**
+
+```js
+// Link to the public HTML version (for foster parent portal, external sharing)
+const publicUrl = `${complianceApiBaseUrl}/public/documents/${slug}`;
+
+// Fetch JSON for in-app rendering
+const doc = await fetch(
+  `${complianceApiBaseUrl}/public/documents/${slug}?format=json`
+).then(r => r.json());
+
+// Fetch raw markdown for client-side rendering with custom styles
+const markdown = await fetch(
+  `${complianceApiBaseUrl}/public/documents/${slug}?format=markdown`
+).then(r => r.text());
+```
 
 ---
 

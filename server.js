@@ -95,6 +95,10 @@ app.use('/api/compliance', complianceDashboardRoutes);         // Dashboard, tim
 const complianceWebhookRoutes = require('./routes/compliance-webhooks');
 app.use('/api/compliance/webhooks', complianceWebhookRoutes); // Pulse webhooks + sync triggers
 
+// Routes — Public Document Access (no authentication required)
+const publicDocumentRoutes = require('./routes/public-documents');
+app.use('/public/documents', publicDocumentRoutes);            // Shareable rendered documents
+
 // Startup
 async function start() {
     // Sync knowbase repo on startup
