@@ -49,6 +49,8 @@ const complianceApi = {
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/health` | Service status (no auth required) |
+| **GitHub Webhook (no API key — uses HMAC signature)** | | |
+| POST | `/webhooks/github` | Auto-sync knowbase on push to main |
 | **Public Document Access (no auth)** | | |
 | GET | `/public/documents` | List all documents with slugs and public URLs |
 | GET | `/public/documents/:slug` | Rendered HTML page (or JSON/markdown via `?format=`) |
@@ -378,6 +380,26 @@ Common HTTP status codes:
 - `404` — Resource not found
 - `409` — Conflict (duplicate resource)
 - `500` — Internal server error
+
+---
+
+## GitHub Webhook — Automatic Knowbase Sync
+
+**`POST /webhooks/github`** — Receives push events from the `refuge-house-knowbase` GitHub repo and automatically refreshes the document cache.
+
+- **No API key required** — authenticated via GitHub's HMAC-SHA256 signature (`x-hub-signature-256` header)
+- Only triggers sync on pushes to `main` (other branches and events are ignored)
+- Responds immediately with `202 Accepted`, then syncs in the background
+- Also syncs the compliance registry and notifies Pulse of changes
+
+**Environment variable:** `GITHUB_WEBHOOK_SECRET` — must match the secret configured in the GitHub webhook settings.
+
+**GitHub webhook setup:**
+1. Go to `refuge-house-knowbase` repo → Settings → Webhooks → Add webhook
+2. Payload URL: `https://compliance-api.refugehouse.org/webhooks/github`
+3. Content type: `application/json`
+4. Secret: (generate a strong secret and set it as `GITHUB_WEBHOOK_SECRET` in App Service config)
+5. Events: select "Just the push event"
 
 ---
 
