@@ -177,9 +177,6 @@ async function syncKnowbase() {
         console.log(`[KNOWBASE] Loaded ${Object.keys(_staticPages).length} static pages: ${Object.keys(_staticPages).join(', ')}`);
     }
 
-    // Also load local static-pages/ directory (fallback for pages not yet in knowbase)
-    loadLocalStaticPages();
-
     // Load manifest if it exists, and build the document index
     loadManifest(tree);
     buildDocumentIndex();
@@ -536,41 +533,6 @@ function estimateTokens(documents) {
         totalChars += doc.content.length;
     }
     return Math.ceil(totalChars / 4);
-}
-
-/**
- * Load static HTML pages from the local static-pages/ directory.
- * These serve as a fallback — knowbase repo pages take precedence.
- */
-function loadLocalStaticPages() {
-    const localDir = path.join(__dirname, '..', 'static-pages');
-    if (!fs.existsSync(localDir)) return;
-
-    const files = fs.readdirSync(localDir).filter(f => f.endsWith('.html'));
-    let loaded = 0;
-
-    for (const file of files) {
-        const pageName = path.basename(file, '.html');
-        // Don't overwrite pages from the knowbase repo
-        if (_staticPages[pageName]) continue;
-
-        try {
-            const content = fs.readFileSync(path.join(localDir, file), 'utf-8');
-            _staticPages[pageName] = {
-                content,
-                lastModified: new Date().toISOString(),
-                sizeBytes: Buffer.byteLength(content, 'utf-8'),
-                path: `static-pages/${file}`
-            };
-            loaded++;
-        } catch (err) {
-            console.warn(`[KNOWBASE] Failed to load local static page ${file}: ${err.message}`);
-        }
-    }
-
-    if (loaded > 0) {
-        console.log(`[KNOWBASE] Loaded ${loaded} local static pages: ${files.map(f => path.basename(f, '.html')).join(', ')}`);
-    }
 }
 
 /**
