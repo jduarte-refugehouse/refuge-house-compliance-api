@@ -4,6 +4,8 @@ Base URL: `https://compliance-api.refugehouse.org` (production) | `http://localh
 
 ## Authentication
 
+Most endpoints under `/api/*` require the API key header. **Static pages (`/pages/*`) are public and require no authentication.**
+
 Every request to `/api/*` must include the header:
 
 ```
@@ -54,6 +56,9 @@ const complianceApi = {
 | **Public Document Access (no auth)** | | |
 | GET | `/public/documents` | List all documents with slugs and public URLs |
 | GET | `/public/documents/:slug` | Rendered HTML page (or JSON/markdown via `?format=`) |
+| **Static Pages (Public)** | | |
+| GET | `/pages` | List all available static HTML pages (no auth) |
+| GET | `/pages/:pageName` | Serve a static HTML page (no auth) |
 | **Knowledge Assistant** | | |
 | POST | `/api/chat` | Natural language policy Q&A |
 | POST | `/api/chat/stream` | Streaming policy Q&A (SSE) |
@@ -478,6 +483,78 @@ const markdown = await fetch(
   `${complianceApiBaseUrl}/public/documents/${slug}?format=markdown`
 ).then(r => r.text());
 ```
+
+---
+
+## Static HTML Pages (Public — No Auth)
+
+The API can serve standalone HTML pages directly from the knowbase repo. These are **public** — no API key needed — intended for foster parents, staff, and external stakeholders.
+
+### How it works
+
+1. Add an `.html` file to the `static-pages/` folder in the knowbase repo (or `static-pages/` in the API repo as a fallback)
+2. The compliance API picks it up on the next sync (startup or `POST /api/compliance/webhooks/sync`)
+3. It's immediately available at `/pages/<filename>` (without the `.html` extension)
+
+### Example
+
+Place `training-videos.html` in the knowbase repo at:
+```
+refuge-house-knowbase/
+  static-pages/
+    training-videos.html
+    emergency-plan.html
+    foster-parent-resources.html
+```
+
+These become accessible at:
+- `https://compliance-api.refugehouse.org/pages/training-videos`
+- `https://compliance-api.refugehouse.org/pages/emergency-plan`
+- `https://compliance-api.refugehouse.org/pages/foster-parent-resources`
+
+### Endpoints
+
+**`GET /pages`** — List all available pages:
+```json
+{
+  "count": 3,
+  "pages": {
+    "training-videos": {
+      "url": "/pages/training-videos",
+      "lastModified": "2026-03-30T...",
+      "sizeBytes": 4523,
+      "source": "static-pages/training-videos.html"
+    },
+    "emergency-plan": { ... },
+    "foster-parent-resources": { ... }
+  }
+}
+```
+
+**`GET /pages/:pageName`** — Returns raw HTML (Content-Type: text/html). The `.html` extension is optional.
+
+### Pulse integration
+
+To make these accessible at `pulse.refugehouse.org/pages/<name>`, add a proxy rule or route in Pulse:
+
+**Option A: Azure App Service proxy rule** (recommended for production):
+Add to Pulse's Azure configuration to proxy `/pages/*` to the compliance API.
+
+**Option B: Pulse route + iframe**:
+```jsx
+// In Pulse router
+<Route path="/pages/:pageName" element={<StaticPageViewer />} />
+
+// StaticPageViewer.jsx
+function StaticPageViewer() {
+  const { pageName } = useParams();
+  const apiUrl = import.meta.env.VITE_COMPLIANCE_API_URL;
+  return <iframe src={`${apiUrl}/pages/${pageName}`} style={{ width: '100%', height: '100vh', border: 'none' }} />;
+}
+```
+
+**Option C: Direct link** — Share the compliance API URL directly:
+`https://compliance-api.refugehouse.org/pages/training-videos`
 
 ---
 

@@ -1,7 +1,7 @@
 // routes/health.js - Health check endpoint (mirrors Pulse's /health pattern)
 const express = require('express');
 const router = express.Router();
-const { getAllDocuments, getCategorySummary, getManifest, estimateTokens } = require('../services/knowbase-loader');
+const { getAllDocuments, getCategorySummary, getManifest, estimateTokens, getAllStaticPages } = require('../services/knowbase-loader');
 
 router.get('/health', async (req, res) => {
     const docs = getAllDocuments();
@@ -52,7 +52,13 @@ router.get('/health', async (req, res) => {
             document_diff: 'GET /api/compliance/documents/:id/diff',
             webhooks_sync: 'POST /api/compliance/webhooks/sync',
             webhooks_reminders: 'POST /api/compliance/webhooks/reminder-check',
-            webhooks_status: 'GET /api/compliance/webhooks/status'
+            webhooks_status: 'GET /api/compliance/webhooks/status',
+            static_pages: 'GET /pages/:pageName (public, no auth)',
+            static_pages_list: 'GET /pages'
+        },
+        staticPages: {
+            count: Object.keys(getAllStaticPages()).length,
+            pages: Object.keys(getAllStaticPages())
         },
         pulse_integration: {
             webhook_configured: !!process.env.PULSE_WEBHOOK_URL,
