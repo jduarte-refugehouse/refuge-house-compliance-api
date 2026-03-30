@@ -492,7 +492,7 @@ The API can serve standalone HTML pages directly from the knowbase repo. These a
 
 ### How it works
 
-1. Add an `.html` file to the `static-pages/` folder in the knowbase repo (or `static-pages/` in the API repo as a fallback)
+1. Add an `.html` file to the `static-pages/` folder in the knowbase repo
 2. The compliance API picks it up on the next sync (startup or `POST /api/compliance/webhooks/sync`)
 3. It's immediately available at `/pages/<filename>` (without the `.html` extension)
 
