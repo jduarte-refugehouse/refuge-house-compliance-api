@@ -51,6 +51,11 @@ const complianceApi = {
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/health` | Service status (no auth required) |
+| **GitHub Webhook (no API key — uses HMAC signature)** | | |
+| POST | `/webhooks/github` | Auto-sync knowbase on push to main |
+| **Public Document Access (no auth)** | | |
+| GET | `/public/documents` | List all documents with slugs and public URLs |
+| GET | `/public/documents/:slug` | Rendered HTML page (or JSON/markdown via `?format=`) |
 | **Static Pages (Public)** | | |
 | GET | `/pages` | List all available static HTML pages (no auth) |
 | GET | `/pages/:pageName` | Serve a static HTML page (no auth) |
@@ -383,13 +388,111 @@ Common HTTP status codes:
 
 ---
 
+## GitHub Webhook — Automatic Knowbase Sync
+
+**`POST /webhooks/github`** — Receives push events from the `refuge-house-knowbase` GitHub repo and automatically refreshes the document cache.
+
+- **No API key required** — authenticated via GitHub's HMAC-SHA256 signature (`x-hub-signature-256` header)
+- Only triggers sync on pushes to `main` (other branches and events are ignored)
+- Responds immediately with `202 Accepted`, then syncs in the background
+- Also syncs the compliance registry and notifies Pulse of changes
+
+**Environment variable:** `GITHUB_WEBHOOK_SECRET` — must match the secret configured in the GitHub webhook settings.
+
+**GitHub webhook setup:**
+1. Go to `refuge-house-knowbase` repo → Settings → Webhooks → Add webhook
+2. Payload URL: `https://compliance-api.refugehouse.org/webhooks/github`
+3. Content type: `application/json`
+4. Secret: (generate a strong secret and set it as `GITHUB_WEBHOOK_SECRET` in App Service config)
+5. Events: select "Just the push event"
+
+---
+
+## Public Document Access (No Authentication)
+
+These endpoints live under `/public/` and require **no API key**. They are designed for:
+- Sharing documents with foster parents, external stakeholders, or auditors
+- Embedding documents in external apps (e.g., foster parent portal)
+- Linking directly to the current version of a policy or plan
+
+### How Slugs Work
+
+Every document in the knowbase gets an auto-generated slug from its filename:
+- `plans/Emergency Response Disaster Recovery and Business Continuity Plan.md` -> `emergency-response-disaster-recovery-and-business-continuity-plan`
+- `policies/medication-management.md` -> `medication-management`
+
+### `GET /public/documents` — List all documents with public URLs
+
+Returns every loaded document with its slug, path, title, and direct URL.
+
+```json
+{
+  "count": 42,
+  "documents": [
+    {
+      "slug": "emergency-response-disaster-recovery-and-business-continuity-plan",
+      "path": "plans/Emergency Response Disaster Recovery and Business Continuity Plan.md",
+      "title": "Emergency Response Disaster Recovery and Business Continuity Plan",
+      "category": "general",
+      "lastModified": "2026-03-25T...",
+      "url": "/public/documents/emergency-response-disaster-recovery-and-business-continuity-plan",
+      "summary": "This plan outlines..."
+    }
+  ]
+}
+```
+
+### `GET /public/documents/:slug` — View a document
+
+Returns a **rendered HTML page** by default (self-contained, branded, print-friendly).
+
+**Formats** (via `?format=` query param):
+
+| Format | Content-Type | Use Case |
+|--------|-------------|----------|
+| `html` (default) | `text/html` | Direct link, browser viewing, print |
+| `json` | `application/json` | App embedding (returns `{ slug, path, title, content }`) |
+| `markdown` | `text/markdown` | Raw markdown for client-side rendering |
+
+**Examples:**
+
+```
+# Shareable link (opens branded HTML page in browser)
+https://compliance-api.refugehouse.org/public/documents/emergency-response-disaster-recovery-and-business-continuity-plan
+
+# JSON for app embedding
+GET /public/documents/emergency-response-disaster-recovery-and-business-continuity-plan?format=json
+
+# Raw markdown
+GET /public/documents/emergency-response-disaster-recovery-and-business-continuity-plan?format=markdown
+```
+
+**Pulse integration patterns:**
+
+```js
+// Link to the public HTML version (for foster parent portal, external sharing)
+const publicUrl = `${complianceApiBaseUrl}/public/documents/${slug}`;
+
+// Fetch JSON for in-app rendering
+const doc = await fetch(
+  `${complianceApiBaseUrl}/public/documents/${slug}?format=json`
+).then(r => r.json());
+
+// Fetch raw markdown for client-side rendering with custom styles
+const markdown = await fetch(
+  `${complianceApiBaseUrl}/public/documents/${slug}?format=markdown`
+).then(r => r.text());
+```
+
+---
+
 ## Static HTML Pages (Public — No Auth)
 
 The API can serve standalone HTML pages directly from the knowbase repo. These are **public** — no API key needed — intended for foster parents, staff, and external stakeholders.
 
 ### How it works
 
-1. Add an `.html` file to the `static-pages/` folder in the knowbase repo
+1. Add an `.html` file to the `static-pages/` folder in the knowbase repo (or `static-pages/` in the API repo as a fallback)
 2. The compliance API picks it up on the next sync (startup or `POST /api/compliance/webhooks/sync`)
 3. It's immediately available at `/pages/<filename>` (without the `.html` extension)
 

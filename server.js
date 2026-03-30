@@ -42,6 +42,11 @@ app.use((req, res, next) => {
     next();
 });
 
+// GitHub webhook — must be registered BEFORE express.json() so it can access the raw body
+// for HMAC signature verification. No API key required; uses GITHUB_WEBHOOK_SECRET instead.
+const githubWebhookRoutes = require('./routes/github-webhook');
+app.use('/webhooks/github', githubWebhookRoutes);
+
 // Middleware
 app.use(express.json({ limit: '5mb' }));
 
@@ -98,6 +103,10 @@ app.use('/api/compliance', complianceDashboardRoutes);         // Dashboard, tim
 // Routes — Pulse Integration (Phase 7)
 const complianceWebhookRoutes = require('./routes/compliance-webhooks');
 app.use('/api/compliance/webhooks', complianceWebhookRoutes); // Pulse webhooks + sync triggers
+
+// Routes — Public Document Access (no authentication required)
+const publicDocumentRoutes = require('./routes/public-documents');
+app.use('/public/documents', publicDocumentRoutes);            // Shareable rendered documents
 
 // Startup
 async function start() {
