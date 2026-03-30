@@ -26,6 +26,8 @@ const { owner: REPO_OWNER, repo: REPO_NAME } = parseRepoUrl(KNOWBASE_REPO_URL);
 let _documentCache = {};
 // Document index: { relativePath: { summary, headings, topics, regulations, packages, tokenEstimate, contentHash } }
 let _documentIndex = {};
+// Static HTML pages cache: { pageName: { content, lastModified, sizeBytes, path } }
+let _staticPages = {};
 let _lastRefresh = 0;
 let _manifest = null;
 
@@ -143,6 +145,37 @@ async function syncKnowbase() {
     });
 
     await Promise.all(fetchPromises);
+
+    // Load static HTML pages from static-pages/ directory
+    _staticPages = {};
+    const htmlFiles = tree.tree.filter(item => {
+        if (item.type !== 'blob') return false;
+        if (!item.path.endsWith('.html')) return false;
+        // Only load from the static-pages/ directory
+        return item.path.startsWith('static-pages/');
+    });
+
+    if (htmlFiles.length > 0) {
+        console.log(`[KNOWBASE] Found ${htmlFiles.length} static HTML pages, fetching...`);
+        const htmlPromises = htmlFiles.map(async (file) => {
+            try {
+                const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
+                const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+                const pageName = path.basename(file.path, '.html');
+
+                _staticPages[pageName] = {
+                    content,
+                    lastModified: new Date().toISOString(),
+                    sizeBytes: Buffer.byteLength(content, 'utf-8'),
+                    path: file.path
+                };
+            } catch (err) {
+                console.warn(`[KNOWBASE] Failed to fetch static page ${file.path}: ${err.message}`);
+            }
+        });
+        await Promise.all(htmlPromises);
+        console.log(`[KNOWBASE] Loaded ${Object.keys(_staticPages).length} static pages: ${Object.keys(_staticPages).join(', ')}`);
+    }
 
     // Load manifest if it exists, and build the document index
     loadManifest(tree);
@@ -503,6 +536,20 @@ function estimateTokens(documents) {
 }
 
 /**
+ * Get a static HTML page by name (without .html extension).
+ */
+function getStaticPage(pageName) {
+    return _staticPages[pageName] || null;
+}
+
+/**
+ * Get all static HTML pages.
+ */
+function getAllStaticPages() {
+    return _staticPages;
+}
+
+/**
  * Search documents by keyword (simple text search).
  */
 function searchDocuments(keywords) {
@@ -538,5 +585,7 @@ module.exports = {
     refreshIfStale,
     formatDocumentsAsContext,
     estimateTokens,
-    searchDocuments
+    searchDocuments,
+    getStaticPage,
+    getAllStaticPages
 };

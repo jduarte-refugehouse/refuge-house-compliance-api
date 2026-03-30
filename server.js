@@ -48,6 +48,10 @@ app.use(express.json({ limit: '5mb' }));
 // Serve test console UI
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Public routes (no authentication required)
+const pagesRoutes = require('./routes/pages');
+app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc.
+
 // API key authentication for service-to-service calls
 app.use('/api', (req, res, next) => {
     const apiKey = req.headers['x-api-key'];
