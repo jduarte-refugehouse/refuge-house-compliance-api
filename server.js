@@ -56,7 +56,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Public routes (no authentication required)
 const pagesRoutes = require('./routes/pages');
+const siteIndexRoutes = require('./routes/site-index');
 app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc.
+app.use('/', siteIndexRoutes);    // Public Site Index for policies/procedures + HTML resources
 
 // API key authentication for service-to-service calls
 app.use('/api', (req, res, next) => {
