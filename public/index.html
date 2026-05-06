@@ -7,14 +7,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
         :root {
-            --rh-primary: #1b3a5c;
-            --rh-primary-dark: #17314d;
-            --rh-accent: #2c5282;
-            --rh-bg: #f5f7fa;
+            --rh-primary: #5E3989;
+            --rh-primary-dark: #3c2556;
+            --rh-secondary: #7b4ba5;
+            --rh-accent: #A90533;
+            --rh-bg: #f8fafc;
+            --rh-light-purple: #f3e9fa;
             --rh-surface: #ffffff;
             --rh-border: #e2e8f0;
-            --rh-text: #1f2937;
-            --rh-muted: #6b7280;
+            --rh-text: #1e293b;
+            --rh-muted: #475569;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -40,6 +42,17 @@
             font-size: 0.9rem;
             opacity: 0.92;
         }
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+        .brand-logo {
+            max-height: 28px;
+            width: auto;
+            filter: brightness(0) invert(1);
+            opacity: 0.95;
+        }
         .container { max-width: 860px; margin: 0 auto; padding: 18px 16px 24px; }
         .quick-links { margin: 0 0 16px; display: flex; gap: 8px; flex-wrap: wrap; }
         .quick-links a {
@@ -47,12 +60,12 @@
             font-size: 0.82rem;
             text-decoration: none;
             color: var(--rh-primary);
-            background: #eef4fb;
-            border: 1px solid #c7d8eb;
+            background: var(--rh-light-purple);
+            border: 1px solid #d4b5e4;
             padding: 6px 10px;
             border-radius: 8px;
         }
-        .quick-links a:hover { background: #dfeaf7; }
+        .quick-links a:hover { background: #ead8f4; }
         .status-bar {
             background: var(--rh-surface);
             border: 1px solid var(--rh-border);
@@ -88,8 +101,8 @@
             text-align: left;
             white-space: pre-wrap;
         }
-        .message.user .bubble { background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
-        .message.assistant .bubble { background: #edf2f7; color: #111827; border-bottom-left-radius: 4px; white-space: normal; }
+        .message.user .bubble { background: var(--rh-primary); color: #fff; border-bottom-right-radius: 4px; }
+        .message.assistant .bubble { background: #f7f2fb; color: #111827; border-bottom-left-radius: 4px; white-space: normal; }
         .message.system .bubble { background: #fef3c7; color: #92400e; font-size: 0.85rem; }
         .message.assistant .bubble h1,
         .message.assistant .bubble h2,
@@ -105,13 +118,13 @@
         .message.assistant .bubble code { background: #e5e7eb; padding: 0.08rem 0.28rem; border-radius: 4px; font-size: 0.9em; }
         .message.assistant .bubble pre { background: #111827; color: #f9fafb; padding: 0.6rem 0.7rem; border-radius: 6px; overflow: auto; }
         .message.assistant .bubble pre code { background: transparent; padding: 0; color: inherit; }
-        .message.assistant .bubble blockquote { border-left: 3px solid #93c5fd; padding-left: 0.6rem; color: #4b5563; }
+        .message.assistant .bubble blockquote { border-left: 3px solid var(--rh-accent); padding-left: 0.6rem; color: #4b5563; }
         .message.assistant .bubble a { color: var(--rh-accent); }
         .input-area { display: flex; border-top: 1px solid var(--rh-border); }
         .input-area input { flex: 1; padding: 14px 18px; border: none; font-size: 1rem; outline: none; }
-        .input-area button { padding: 14px 24px; background: #2563eb; color: #fff; border: none; font-size: 1rem; cursor: pointer; font-weight: 500; }
-        .input-area button:hover { background: #1d4ed8; }
-        .input-area button:disabled { background: #93c5fd; cursor: not-allowed; }
+        .input-area button { padding: 14px 24px; background: var(--rh-primary); color: #fff; border: none; font-size: 1rem; cursor: pointer; font-weight: 500; }
+        .input-area button:hover { background: var(--rh-primary-dark); }
+        .input-area button:disabled { background: #b79ed1; cursor: not-allowed; }
         .meta { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
         .info { margin-top: 12px; font-size: 0.8rem; color: var(--rh-muted); }
     </style>
@@ -119,6 +132,9 @@
 <body>
     <header class="masthead">
         <div class="masthead-inner">
+            <div class="brand-row">
+                <img class="brand-logo" src="/brand/refuge-house-wordmark.svg" alt="Refuge House logo" onerror="this.style.display='none'" />
+            </div>
             <h1>Refuge House Compliance Assistant</h1>
             <p class="subtitle">Test console for the Compliance API</p>
         </div>

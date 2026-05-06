@@ -7,14 +7,16 @@ const router = express.Router();
 const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
 
 const BRAND = {
-    primary: '#1b3a5c',
-    primaryDark: '#17314d',
-    accent: '#2c5282',
-    bg: '#f5f7fa',
+    primary: '#5E3989',
+    primaryDark: '#3c2556',
+    secondary: '#7b4ba5',
+    accent: '#A90533',
+    bg: '#f8fafc',
+    lightPurple: '#f3e9fa',
     surface: '#ffffff',
     border: '#e2e8f0',
-    text: '#1f2937',
-    muted: '#6b7280'
+    text: '#1e293b',
+    muted: '#475569'
 };
 
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
@@ -167,7 +169,7 @@ function rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs) {
 
     const pathToSlug = buildDocPathToSlugLookup(allDocs);
 
-    return renderedHtml.replace(/href="([^"]+)"/g, (full, href) => {
+    const routedHtml = renderedHtml.replace(/href="([^"]+)"/g, (full, href) => {
         const parts = parseHrefParts(href);
         if (!parts) return full;
 
@@ -199,6 +201,19 @@ function rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs) {
 
         return `href="/public/documents/${slug}${suffix}"`;
     });
+
+    // Force insecure absolute links to https where possible to avoid mixed-content warnings.
+    return routedHtml.replace(/(href|src)="http:\/\/([^"]+)"/gi, (full, attr, target) => {
+        const lower = String(target || '').toLowerCase();
+        if (
+            lower.startsWith('localhost') ||
+            lower.startsWith('127.0.0.1') ||
+            lower.startsWith('0.0.0.0')
+        ) {
+            return full;
+        }
+        return `${attr}="https://${target}"`;
+    });
 }
 
 /**
@@ -224,8 +239,10 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         :root {
             --rh-primary: ${BRAND.primary};
             --rh-primary-dark: ${BRAND.primaryDark};
+            --rh-secondary: ${BRAND.secondary};
             --rh-accent: ${BRAND.accent};
             --rh-bg: ${BRAND.bg};
+            --rh-light-purple: ${BRAND.lightPurple};
             --rh-surface: ${BRAND.surface};
             --rh-border: ${BRAND.border};
             --rh-text: ${BRAND.text};
@@ -261,6 +278,18 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
             padding: 0.2rem 0.55rem;
             margin-bottom: 0.5rem;
         }
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            margin-top: 0.35rem;
+        }
+        .brand-logo {
+            max-height: 26px;
+            width: auto;
+            filter: brightness(0) invert(1);
+            opacity: 0.92;
+        }
         .header h1 {
             margin: 0;
             font-size: 1.2rem;
@@ -270,7 +299,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         .header .org-name {
             font-size: 0.84rem;
             opacity: 0.9;
-            margin-top: 0.28rem;
+            margin-top: 0;
         }
         .container {
             max-width: 900px;
@@ -297,10 +326,10 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         .content li { margin: 0.27rem 0; }
         .content table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
         .content th, .content td { border: 1px solid var(--rh-border); padding: 0.5rem 0.72rem; text-align: left; }
-        .content th { background: #edf2f7; font-weight: 620; }
-        .content blockquote { border-left: 3px solid var(--rh-accent); margin: 1rem 0; padding: 0.5rem 1rem; background: #f8fafc; }
-        .content code { background: #eef2f7; padding: 0.12rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
-        .content pre { background: #eef2f7; padding: 0.9rem; border-radius: 4px; overflow-x: auto; }
+        .content th { background: var(--rh-light-purple); font-weight: 620; }
+        .content blockquote { border-left: 3px solid var(--rh-accent); margin: 1rem 0; padding: 0.5rem 1rem; background: #faf5ff; }
+        .content code { background: #f5f0fa; padding: 0.12rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
+        .content pre { background: #f5f0fa; padding: 0.9rem; border-radius: 4px; overflow-x: auto; }
         .content pre code { background: none; padding: 0; }
         .content a { color: var(--rh-accent); }
         .footer {
@@ -324,7 +353,10 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         <div class="header-inner">
             <span class="eyebrow">${family.label}</span>
             <h1>${title}</h1>
-            <div class="org-name">Refuge House, Inc. Compliance Library</div>
+            <div class="brand-row">
+                <img class="brand-logo" src="/brand/refuge-house-wordmark.svg" alt="Refuge House logo" onerror="this.style.display='none'" />
+                <div class="org-name">Refuge House, Inc. Compliance Library</div>
+            </div>
         </div>
     </div>
     <div class="container">

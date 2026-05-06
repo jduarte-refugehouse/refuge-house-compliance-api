@@ -106,19 +106,33 @@ router.get('/site-index', async (req, res) => {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Site Index - Refuge House Compliance API</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <style>
-    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; margin: 0; background: #f5f7fa; color: #1f2937; }
+    :root {
+      --rh-primary: #5E3989;
+      --rh-primary-dark: #3c2556;
+      --rh-accent: #A90533;
+      --rh-bg: #f8fafc;
+      --rh-light-purple: #f3e9fa;
+      --rh-surface: #ffffff;
+      --rh-border: #e2e8f0;
+      --rh-text: #1e293b;
+      --rh-muted: #475569;
+    }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; margin: 0; background: var(--rh-bg); color: var(--rh-text); }
     .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; }
     h1 { margin: 0 0 6px; }
-    .subtitle { color: #6b7280; margin: 0 0 18px; }
+    .subtitle { color: var(--rh-muted); margin: 0 0 18px; }
     .topbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
-    .btn { display:inline-block; padding: 8px 12px; border:1px solid #d1d5db; border-radius: 8px; background:#fff; color:#111827; text-decoration:none; font-size: 14px; }
-    .panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
-    .counts { font-size: 13px; color: #4b5563; margin-bottom: 12px; }
+    .btn { display:inline-block; padding: 8px 12px; border:1px solid #d4b5e4; border-radius: 8px; background: var(--rh-light-purple); color: var(--rh-primary); text-decoration:none; font-size: 14px; }
+    .btn:hover { background: #ead8f4; }
+    .panel { background: var(--rh-surface); border: 1px solid var(--rh-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+    .counts { font-size: 13px; color: var(--rh-muted); margin-bottom: 12px; }
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
     ul { margin: 0; padding-left: 18px; max-height: 520px; overflow: auto; }
     li { margin: 0 0 8px; }
-    .meta { display: block; font-size: 12px; color: #6b7280; }
+    .meta { display: block; font-size: 12px; color: var(--rh-muted); }
+    a { color: var(--rh-accent); }
     @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
