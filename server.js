@@ -19,9 +19,13 @@ const path = require('path');
 const express = require('express');
 const { syncKnowbase } = require('./services/knowbase-loader');
 const cookbook = require('./services/content-cookbook');
+const { publicConsoleProtection } = require('./middleware/public-console-protection');
 
 const app = express();
 const PORT = process.env.PORT || 3100;
+
+// Respect reverse proxy headers for accurate client IPs (Azure/App Gateway/Front Door).
+app.set('trust proxy', 1);
 
 // CORS - allow Pulse front-ends
 const ALLOWED_ORIGINS = [
@@ -66,7 +70,7 @@ const pagesRoutes = require('./routes/pages');
 const siteIndexRoutes = require('./routes/site-index');
 app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc.
 app.use('/', siteIndexRoutes);    // Public Site Index for policies/procedures + HTML resources
-app.use('/console/chat', chatRoutes); // Landing page console chat (no API key)
+app.use('/console/chat', publicConsoleProtection, chatRoutes); // Public console chat with abuse controls
 app.use('/', healthRoutes);
 
 // API key authentication for service-to-service calls
