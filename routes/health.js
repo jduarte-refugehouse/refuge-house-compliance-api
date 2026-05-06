@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { getAllDocuments, getCategorySummary, getManifest, estimateTokens, getAllStaticPages } = require('../services/knowbase-loader');
+const cookbook = require('../services/content-cookbook');
 
 router.get('/health', async (req, res) => {
     const docs = getAllDocuments();
@@ -54,12 +55,32 @@ router.get('/health', async (req, res) => {
             webhooks_reminders: 'POST /api/compliance/webhooks/reminder-check',
             webhooks_status: 'GET /api/compliance/webhooks/status',
             static_pages: 'GET /pages/:pageName (public, no auth)',
-            static_pages_list: 'GET /pages'
+            static_pages_list: 'GET /pages',
+            cookbook_list: 'GET /api/content-cookbook',
+            cookbook_resolve: 'GET /api/content-cookbook/resolve',
+            cookbook_entry: 'GET /api/content-cookbook/:slug',
+            cookbook_html: 'GET /api/content-cookbook/:slug/html',
+            cookbook_status: 'GET /api/content-cookbook/_status'
         },
         staticPages: {
             count: Object.keys(getAllStaticPages()).length,
             pages: Object.keys(getAllStaticPages())
         },
+        cookbook: (() => {
+            const s = cookbook.getStatus();
+            return {
+                entryCount: s.entryCount,
+                htmlCount: s.htmlCount,
+                lastSyncAt: s.lastSyncAt,
+                sourceRef: s.sourceRef,
+                validation: {
+                    total: s.validation.total,
+                    valid: s.validation.valid,
+                    invalidCount: s.validation.invalid.length,
+                    warningCount: s.validation.warnings.length
+                }
+            };
+        })(),
         pulse_integration: {
             webhook_configured: !!process.env.PULSE_WEBHOOK_URL,
             auto_sync: true

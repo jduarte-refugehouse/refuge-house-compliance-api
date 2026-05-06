@@ -18,6 +18,7 @@ process.on('unhandledRejection', (reason, promise) => {
 const path = require('path');
 const express = require('express');
 const { syncKnowbase } = require('./services/knowbase-loader');
+const cookbook = require('./services/content-cookbook');
 
 const app = express();
 const PORT = process.env.PORT || 3100;
@@ -87,6 +88,10 @@ app.use('/api/generate', generateRoutes);     // Plan/document generation from c
 app.use('/api/evaluate', evaluateRoutes);     // Structured compliance evaluations
 app.use('/api/documents', documentsRoutes);   // Browse loaded knowbase documents
 
+// Routes — Content Cookbook (registry + resolver + render contract)
+const contentCookbookRoutes = require('./routes/content-cookbook');
+app.use('/api/content-cookbook', contentCookbookRoutes);
+
 // Routes — Compliance Workflow (Phase 2)
 const complianceDocRoutes = require('./routes/compliance-documents');
 const complianceRegRoutes = require('./routes/compliance-regulations');
@@ -118,6 +123,28 @@ async function start() {
     } catch (err) {
         console.error('[STARTUP] Knowbase sync failed:', err.message);
         console.error('[STARTUP] The API will start but chat/evaluations may fail until docs are available');
+    }
+
+    // Mirror cookbook registry + run validation. Malformed entries are
+    // logged but do not block startup — the registry is served minus the
+    // bad entries, so the rest of the system stays available.
+    try {
+        console.log('[STARTUP] Mirroring content cookbook registry...');
+        await cookbook.syncCookbook();
+        const report = cookbook.getValidationReport();
+        if (report.invalid.length > 0) {
+            console.warn(`[STARTUP] Cookbook registry has ${report.invalid.length} invalid entries:`);
+            for (const { slug, issues } of report.invalid) {
+                console.warn(`[STARTUP]   - ${slug}: ${issues.join('; ')}`);
+            }
+        }
+        if (report.warnings.length > 0) {
+            console.warn(`[STARTUP] Cookbook registry has ${report.warnings.length} warnings (drift/coupling)`);
+        }
+        console.log(`[STARTUP] Cookbook ready: ${report.valid}/${report.total} entries`);
+    } catch (err) {
+        console.error('[STARTUP] Cookbook sync failed:', err.message);
+        console.error('[STARTUP] /api/content-cookbook will return empty results until next refresh');
     }
 
     app.listen(PORT, () => {
