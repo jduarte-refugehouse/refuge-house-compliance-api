@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 const { getAllDocuments, getAllStaticPages } = require('../services/knowbase-loader');
 const cookbook = require('../services/content-cookbook');
+const { applyCookbookBranding } = require('../utils/cookbook-branding');
 
 function pathToSlug(docPath) {
     const basename = String(docPath || '').split('/').pop().replace(/\.md$/i, '');
@@ -106,7 +107,7 @@ router.get('/site-index', async (req, res) => {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Site Index - Refuge House Compliance API</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
   <style>
     :root {
       --rh-primary: #5E3989;
@@ -141,7 +142,7 @@ router.get('/site-index', async (req, res) => {
     <h1>Site Index</h1>
     <p class="subtitle">Public index of key content available through the Compliance API.</p>
     <div class="topbar">
-      <a class="btn" href="/">← Back to Compliance Assistant</a>
+      <a class="btn" href="/">← Back to Compliance Library</a>
       <a class="btn" href="/site-index.json" target="_blank" rel="noopener">View JSON Index</a>
     </div>
 
@@ -186,7 +187,7 @@ router.get('/site-index/cookbook/:slug', async (req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=60');
     res.setHeader('X-Content-Slug', entry.slug);
     res.setHeader('X-Content-Status', entry.status);
-    res.send(html.content);
+    res.send(applyCookbookBranding(entry, html.content));
 });
 
 module.exports = router;

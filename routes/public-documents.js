@@ -234,7 +234,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Refuge House</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" href="/favicon.png">
     <style>
         :root {
             --rh-primary: ${BRAND.primary};
@@ -278,18 +278,6 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
             padding: 0.2rem 0.55rem;
             margin-bottom: 0.5rem;
         }
-        .brand-row {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            margin-top: 0.35rem;
-        }
-        .brand-logo {
-            max-height: 26px;
-            width: auto;
-            filter: brightness(0) invert(1);
-            opacity: 0.92;
-        }
         .header h1 {
             margin: 0;
             font-size: 1.2rem;
@@ -299,7 +287,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         .header .org-name {
             font-size: 0.84rem;
             opacity: 0.9;
-            margin-top: 0;
+            margin-top: 0.35rem;
         }
         .container {
             max-width: 900px;
@@ -353,10 +341,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         <div class="header-inner">
             <span class="eyebrow">${family.label}</span>
             <h1>${title}</h1>
-            <div class="brand-row">
-                <img class="brand-logo" src="/brand/refuge-house-wordmark.svg" alt="Refuge House logo" onerror="this.style.display='none'" />
-                <div class="org-name">Refuge House, Inc. Compliance Library</div>
-            </div>
+            <div class="org-name">Refuge House, Inc.</div>
         </div>
     </div>
     <div class="container">

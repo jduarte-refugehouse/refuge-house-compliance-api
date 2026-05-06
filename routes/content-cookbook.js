@@ -13,6 +13,7 @@
 const express = require('express');
 const router = express.Router();
 const cookbook = require('../services/content-cookbook');
+const { applyCookbookBranding } = require('../utils/cookbook-branding');
 
 // Refresh in-memory cache if stale, but never let a refresh failure 500 a read.
 router.use(async (req, res, next) => {
@@ -124,7 +125,7 @@ router.get('/:slug/html', (req, res) => {
     res.setHeader('X-Content-Status', entry.status);
     if (entry.checksum) res.setHeader('X-Content-Checksum', entry.checksum);
     if (entry.sourceRef) res.setHeader('X-Source-Ref', entry.sourceRef);
-    res.send(html.content);
+    res.send(applyCookbookBranding(entry, html.content));
 });
 
 function serialize(e) {

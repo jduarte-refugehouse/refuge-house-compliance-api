@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Compliance API - Test Console</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <title>Refuge House Compliance Library</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
     <style>
         :root {
             --rh-primary: #5E3989;
@@ -38,20 +38,16 @@
             font-size: 1.25rem;
             margin-bottom: 0.2rem;
         }
-        .masthead .subtitle {
-            font-size: 0.9rem;
-            opacity: 0.92;
-        }
-        .brand-row {
-            display: flex;
-            align-items: center;
-            gap: 0.65rem;
-        }
-        .brand-logo {
-            max-height: 28px;
-            width: auto;
-            filter: brightness(0) invert(1);
-            opacity: 0.95;
+        .eyebrow {
+            display: inline-block;
+            margin-bottom: 0.35rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+            border: 1px solid rgba(255,255,255,0.34);
+            border-radius: 999px;
+            padding: 0.2rem 0.55rem;
         }
         .container { max-width: 860px; margin: 0 auto; padding: 18px 16px 24px; }
         .quick-links { margin: 0 0 16px; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -132,11 +128,8 @@
 <body>
     <header class="masthead">
         <div class="masthead-inner">
-            <div class="brand-row">
-                <img class="brand-logo" src="/brand/refuge-house-wordmark.svg" alt="Refuge House logo" onerror="this.style.display='none'" />
-            </div>
-            <h1>Refuge House Compliance Assistant</h1>
-            <p class="subtitle">Test console for the Compliance API</p>
+            <span class="eyebrow">Refuge House, Inc.</span>
+            <h1>Refuge House Compliance Library</h1>
         </div>
     </header>
 
