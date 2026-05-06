@@ -558,6 +558,92 @@ function StaticPageViewer() {
 
 ---
 
+## Content Cookbook (Registry + Resolver)
+
+The cookbook is the **stable contract** for compliance content used by Pulse and other integrations (child / package / add-on flows). It separates three responsibilities cleanly:
+
+- **Render store** — HTML bodies served by slug (`/api/content-cookbook/:slug/html`)
+- **Registry** — `cookbook/index.json` in the knowbase repo + per-entry metadata
+- **Resolver** — deterministic mapping from `(contentType, packageCode, addOnCode, domain)` to a single entry
+
+The compliance API is the **recipient**: it mirrors the registry from the knowbase repo into memory, validates each entry, and serves the contract endpoints. Drift, missing files, and checksum mismatches surface as warnings on `/api/content-cookbook/_status` rather than silently corrupting reads.
+
+### Required schema fields per entry
+
+Every entry in `cookbook/index.json` must include:
+
+| Field | Description |
+|-------|-------------|
+| `id` | Stable internal identifier |
+| `slug` | URL-safe identifier (used in URLs and resolver) |
+| `title` | Human-readable title |
+| `summary` | One-line description (optional but recommended) |
+| `kind` | High-level category (e.g. `form`, `notice`, `guide`) |
+| `contentType` | Specific type (e.g. `package-form`, `add-on-form`, `consent`) |
+| `domain` | Domain bucket (e.g. `placement`, `medical`, `training`) |
+| `contexts` | Object: `{ packageCode?, addOnCode?, ... }` for resolver matching |
+| `status` | One of `active`, `deprecated`, `superseded`, `archived` |
+| `path` | File path inside the knowbase repo (e.g. `cookbook/forms/my-form.html`) |
+
+The recipient enriches each entry with `sourceRepo`, `sourceRef`, `sourceUrl`, `mirroredAt`, `syncMode`, and `checksum` automatically.
+
+### Endpoints
+
+**`GET /api/content-cookbook`** — List entries with filters:
+- `status` (default `active`; comma-separated, or `all`)
+- `kind`, `contentType`, `domain`, `packageCode`, `addOnCode`
+
+```json
+{
+  "count": 12,
+  "filter": { "status": "active", "contentType": "package-form" },
+  "meta": { "sourceRepo": "...", "sourceRef": "abc123", "lastSyncAt": "..." },
+  "entries": [ { "id": "...", "slug": "...", "title": "...", ... } ]
+}
+```
+
+**`GET /api/content-cookbook/resolve`** — Deterministic resolver. Inputs: `slug`, `contentType`, `packageCode`, `addOnCode`, `domain`. Response includes `resolutionMode` so the decision is auditable from the response itself.
+
+Precedence (first hit wins, never varies silently):
+1. exact slug match (`slug-exact`)
+2. `contentType` + `packageCode` + `addOnCode` + `status=active` (`contentType+package+addOn`)
+3. `contentType` + `packageCode` + `status=active` (`contentType+package`)
+4. `contentType` + `domain` + `status=active` (`contentType+domain`)
+5. fallback default entry (`isDefault: true` in metadata) → `default`
+
+```json
+{
+  "resolutionMode": "contentType+package",
+  "context": { "contentType": "package-form", "packageCode": "FFCC" },
+  "entry": { "slug": "ffcc-intake-form", "title": "...", "checksum": "...", ... }
+}
+```
+
+**`GET /api/content-cookbook/:slug`** — Single entry metadata.
+- Archived entries: `404` by default; pass `?status=archived` (or `?includeArchived=true`) to retrieve.
+
+**`GET /api/content-cookbook/:slug/html`** — Mirrored HTML body.
+- Archived entries remain reachable here for compliance continuity.
+- Response headers: `X-Content-Slug`, `X-Content-Status`, `X-Content-Checksum`, `X-Source-Ref`.
+
+**`GET /api/content-cookbook/_status`** — Drift / integrity diagnostics: last sync time, source ref, validation report (invalid entries + warnings).
+
+### Caching
+
+Reads are served from an in-memory registry that is refreshed when stale. Default TTL is 60 seconds (`COOKBOOK_CACHE_TTL_MS`). The cache is also rebuilt on startup and can be busted by re-running sync (e.g. via `POST /api/compliance/webhooks/sync`).
+
+### Sync workflow (sender → recipient)
+
+1. Sender (knowbase) updates HTML and registry entry
+2. Recipient mirrors HTML + metadata into memory
+3. Recipient stamps `mirroredAt` and computes/verifies `checksum`
+4. Recipient validates required coupling fields (`contentType`, `domain`, `contexts`)
+5. Recipient deploys / serves new content
+
+If validation fails on an entry, that entry is dropped from the registry and surfaced in `_status.invalid`; the rest of the registry continues to serve. Drift (missing file, checksum mismatch) is reported as a warning rather than dropping the entry.
+
+---
+
 ## CORS
 
 The API allows requests from:
