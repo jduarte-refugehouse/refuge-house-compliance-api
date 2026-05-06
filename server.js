@@ -54,11 +54,20 @@ app.use(express.json({ limit: '5mb' }));
 // Serve test console UI
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Routes — Knowledge Assistant (Phase 1)
+const healthRoutes = require('./routes/health');
+const chatRoutes = require('./routes/chat');
+const generateRoutes = require('./routes/generate');
+const evaluateRoutes = require('./routes/evaluate');
+const documentsRoutes = require('./routes/documents');
+
 // Public routes (no authentication required)
 const pagesRoutes = require('./routes/pages');
 const siteIndexRoutes = require('./routes/site-index');
 app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc.
 app.use('/', siteIndexRoutes);    // Public Site Index for policies/procedures + HTML resources
+app.use('/console/chat', chatRoutes); // Landing page console chat (no API key)
+app.use('/', healthRoutes);
 
 // API key authentication for service-to-service calls
 app.use('/api', (req, res, next) => {
@@ -77,14 +86,6 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
-// Routes — Knowledge Assistant (Phase 1)
-const healthRoutes = require('./routes/health');
-const chatRoutes = require('./routes/chat');
-const generateRoutes = require('./routes/generate');
-const evaluateRoutes = require('./routes/evaluate');
-const documentsRoutes = require('./routes/documents');
-
-app.use('/', healthRoutes);
 app.use('/api/chat', chatRoutes);             // Natural language policy Q&A
 app.use('/api/generate', generateRoutes);     // Plan/document generation from child data
 app.use('/api/evaluate', evaluateRoutes);     // Structured compliance evaluations
