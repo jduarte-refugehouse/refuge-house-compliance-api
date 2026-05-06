@@ -28,6 +28,8 @@ let _documentCache = {};
 let _documentIndex = {};
 // Static HTML pages cache: { pageName: { content, lastModified, sizeBytes, path } }
 let _staticPages = {};
+// Root README cache used by public About page rendering.
+let _rootReadme = null;
 let _lastRefresh = 0;
 let _manifest = null;
 
@@ -106,6 +108,7 @@ async function syncKnowbase() {
     const tree = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/trees/${KNOWBASE_BRANCH}?recursive=1`);
 
     _documentCache = {};
+    _rootReadme = null;
 
     // Filter for .md files, skip README.md, hidden dirs, node_modules, source-pdfs
     const mdFiles = tree.tree.filter(item => {
@@ -145,6 +148,24 @@ async function syncKnowbase() {
     });
 
     await Promise.all(fetchPromises);
+
+    // Load root README for /public/documents/about rendering.
+    const readmeFile = tree.tree.find(item => item.type === 'blob' && item.path === 'README.md');
+    if (readmeFile) {
+        try {
+            const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${readmeFile.sha}`);
+            const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+            _rootReadme = {
+                content,
+                lastModified: new Date().toISOString(),
+                sizeBytes: Buffer.byteLength(content, 'utf-8'),
+                path: readmeFile.path
+            };
+            console.log('[KNOWBASE] Loaded root README for About page');
+        } catch (err) {
+            console.warn(`[KNOWBASE] Failed to fetch root README.md: ${err.message}`);
+        }
+    }
 
     // Load static HTML pages from static-pages/ directory
     _staticPages = {};
@@ -190,7 +211,7 @@ async function syncKnowbase() {
     if (_manifest) {
         console.log(`[KNOWBASE] Document manifest loaded with ${Object.keys(_manifest).filter(k => k !== '_comment').length} evaluation types`);
     } else {
-        console.log(`[KNOWBASE] No document-manifest.json found (chat will use all docs, evaluations will use all docs)`);
+        console.log('[KNOWBASE] No document-manifest.json found (chat will use all docs, evaluations will use all docs)');
     }
 
     // Sync with compliance document registry (Phase 6)
@@ -481,6 +502,13 @@ function getAllDocuments() {
 }
 
 /**
+ * Get root knowbase README markdown for About rendering.
+ */
+function getKnowbaseReadme() {
+    return _rootReadme;
+}
+
+/**
  * Get a count of documents per category.
  */
 function getCategorySummary() {
@@ -581,6 +609,7 @@ module.exports = {
     getDocumentsByCategory,
     getAllDocuments,
     getDocumentIndex,
+    getKnowbaseReadme,
     getCategorySummary,
     refreshIfStale,
     formatDocumentsAsContext,

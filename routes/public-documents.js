@@ -4,7 +4,7 @@
 const express = require('express');
 const { marked } = require('marked');
 const router = express.Router();
-const { getAllDocuments, getDocumentIndex } = require('../services/knowbase-loader');
+const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
 
 const BRAND = {
     primary: '#1b3a5c',
@@ -45,6 +45,9 @@ function findBySlug(slug) {
 }
 
 function getDocumentFamily(docPath) {
+    if (docPath === 'README.md') {
+        return { label: 'About', theme: 'about' };
+    }
     if (docPath.startsWith('policies-procedures/Policy/')) {
         return { label: 'Policy', theme: 'policy' };
     }
@@ -74,6 +77,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Refuge House</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <style>
         :root {
             --rh-primary: ${BRAND.primary};
@@ -228,6 +232,44 @@ router.get('/', (req, res) => {
         count: listing.length,
         documents: listing
     });
+});
+
+// GET /public/documents/about - Render knowbase root README as branded About page
+router.get('/about', async (req, res) => {
+    await refreshIfStale();
+    const readme = getKnowbaseReadme();
+    if (!readme) {
+        return res.status(404).send(`
+            <html><body style="font-family:sans-serif;text-align:center;padding:4rem;">
+                <h2>About Page Not Available</h2>
+                <p>Knowbase README has not been loaded yet.</p>
+                <a href="/public/documents">View all documents</a>
+            </body></html>
+        `);
+    }
+
+    const title = 'Refuge House Knowledge Base';
+    const format = req.query.format || 'html';
+
+    if (format === 'json') {
+        return res.json({
+            slug: 'about',
+            path: readme.path,
+            title,
+            family: 'About',
+            lastModified: readme.lastModified,
+            content: readme.content
+        });
+    }
+
+    if (format === 'markdown') {
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        return res.send(readme.content);
+    }
+
+    const html = renderHtmlPage(title, readme.content, readme.path, readme.lastModified);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
 });
 
 // GET /public/documents/:slug - Render a document as a branded HTML page
