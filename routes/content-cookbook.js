@@ -3,6 +3,7 @@
 // kept separate by URL design:
 //
 //   GET /api/content-cookbook            → registry list (filter)
+//   GET /api/content-cookbook/entry-point → package/add-on guide resolver
 //   GET /api/content-cookbook/resolve    → deterministic resolver
 //   GET /api/content-cookbook/_status    → drift/integrity diagnostics
 //   GET /api/content-cookbook/:slug      → single registry entry (metadata)
@@ -78,6 +79,93 @@ router.get('/resolve', (req, res) => {
     });
 });
 
+// ── Package/Add-On entry-point resolver ────────────────────────────────────
+// Purpose: convenience endpoint for calling apps that only know service package
+// or add-on code and need the correct guide/supplement entry point.
+//
+// Query params:
+//   servicePackage   (e.g. MBH, STASS, TFFC, SU)
+//   addOn            (e.g. KIN, PPY, YTSS)
+//   includeStub      (default true) include status=stub in fallback
+//   includeArchived  (default false)
+//   format           metadata (default) | html-url | html
+router.get('/entry-point', (req, res) => {
+    const servicePackage = normalizeCode(req.query.servicePackage || req.query.packageCode);
+    const addOn = normalizeCode(req.query.addOn || req.query.addOnCode);
+    const includeStub = req.query.includeStub !== 'false';
+    const includeArchived = req.query.includeArchived === 'true' || req.query.includeArchived === '1';
+    const format = (req.query.format || 'metadata').toString().toLowerCase();
+
+    if (!servicePackage && !addOn) {
+        return res.status(400).json({
+            error: 'missing required input',
+            hint: 'pass servicePackage=<CODE> or addOn=<CODE>'
+        });
+    }
+
+    const all = cookbook.listEntries({ status: 'all' });
+    const statusRank = includeStub
+        ? ['active', 'stub', 'deprecated', 'superseded', 'archived']
+        : ['active', 'deprecated', 'superseded', 'archived'];
+    const allowedStatuses = includeArchived
+        ? new Set(statusRank)
+        : new Set(statusRank.filter((s) => s !== 'archived'));
+
+    const candidates = all
+        .filter((e) => allowedStatuses.has(e.status))
+        .filter((e) => {
+            const ctx = e.contexts || {};
+            const entryPackage = normalizeCode(ctx.packageCode);
+            const entryAddOn = normalizeCode(ctx.addOnCode);
+            if (servicePackage && addOn) return entryPackage === servicePackage && entryAddOn === addOn;
+            if (servicePackage) return entryPackage === servicePackage && !entryAddOn;
+            if (addOn) return entryAddOn === addOn;
+            return false;
+        })
+        .sort((a, b) => scoreEntry(b, statusRank) - scoreEntry(a, statusRank));
+
+    const entry = candidates[0];
+    if (!entry) {
+        return res.status(404).json({
+            error: 'no matching entry point',
+            context: { servicePackage, addOn }
+        });
+    }
+
+    const htmlPath = `/api/content-cookbook/${entry.slug}/html`;
+    if (format === 'html') {
+        const html = cookbook.getHtml(entry.slug);
+        if (!html) {
+            return res.status(404).json({
+                error: 'html not mirrored',
+                slug: entry.slug
+            });
+        }
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('X-Content-Slug', entry.slug);
+        res.setHeader('X-Content-Status', entry.status);
+        return res.send(applyCookbookBranding(entry, html.content));
+    }
+
+    const payload = {
+        context: { servicePackage, addOn },
+        integrationHint: 'Use htmlEndpoint as-is to preserve interactive HTML behavior (JS/CSS) in the calling application.',
+        entry: serialize(entry),
+        htmlEndpoint: htmlPath
+    };
+
+    if (format === 'html-url') {
+        return res.json({
+            context: payload.context,
+            slug: entry.slug,
+            status: entry.status,
+            htmlEndpoint: payload.htmlEndpoint
+        });
+    }
+
+    return res.json(payload);
+});
+
 // ── Diagnostics ─────────────────────────────────────────────────────────
 // Drift and integrity report, plus mirror provenance.
 router.get('/_status', (req, res) => {
@@ -150,6 +238,26 @@ function serialize(e) {
         isDefault: !!e.isDefault,
         supersededBy: e.supersededBy
     };
+}
+
+function normalizeCode(value) {
+    if (value === undefined || value === null) return null;
+    const str = String(value).trim();
+    if (!str) return null;
+    return str.toUpperCase();
+}
+
+function scoreEntry(entry, statusRank) {
+    const statusScore = Math.max(0, 100 - (statusRank.indexOf(entry.status) * 20));
+    const kind = String(entry.kind || '').toLowerCase();
+    const type = String(entry.contentType || '').toLowerCase();
+    const guideScore = (
+        kind.includes('guide') ||
+        kind.includes('supplement') ||
+        type.includes('guide') ||
+        type.includes('supplement')
+    ) ? 10 : 0;
+    return statusScore + guideScore + (entry.isDefault ? 2 : 0);
 }
 
 module.exports = router;

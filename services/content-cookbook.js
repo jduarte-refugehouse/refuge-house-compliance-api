@@ -23,7 +23,7 @@ const CACHE_TTL_MS = parseInt(process.env.COOKBOOK_CACHE_TTL_MS || '60000', 10);
 const REQUIRED_FIELDS = [
     'id', 'slug', 'title', 'kind', 'contentType', 'domain', 'status', 'path'
 ];
-const VALID_STATUSES = ['active', 'deprecated', 'superseded', 'archived'];
+const VALID_STATUSES = ['active', 'stub', 'deprecated', 'superseded', 'archived'];
 const VALID_STATUS_SET = new Set(VALID_STATUSES);
 
 function parseRepoUrl(url) {

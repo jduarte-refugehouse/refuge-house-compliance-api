@@ -72,6 +72,13 @@ const complianceApi = {
 | GET | `/api/documents/evaluation-types` | List available evaluation types |
 | POST | `/api/documents/refresh` | Pull latest from GitHub and re-index |
 | POST | `/api/documents/reindex` | Force full re-index (ignores cache) |
+| **Cookbook Content (Package/Add-On HTML)** | | |
+| GET | `/api/content-cookbook` | List mirrored cookbook entries |
+| GET | `/api/content-cookbook/entry-point` | Resolve package/add-on entry point (preferred for apps) |
+| GET | `/api/content-cookbook/resolve` | Deterministic context resolver |
+| GET | `/api/content-cookbook/:slug` | Single entry metadata |
+| GET | `/api/content-cookbook/:slug/html` | Fully functional mirrored HTML |
+| GET | `/api/content-cookbook/_status` | Mirror health, drift, and validation diagnostics |
 | **Compliance Registry** | | |
 | GET | `/api/compliance/documents` | List registered documents (filterable, paginated) |
 | GET | `/api/compliance/documents/:id` | Get single document details |
@@ -582,7 +589,7 @@ Every entry in `cookbook/index.json` must include:
 | `contentType` | Specific type (e.g. `package-form`, `add-on-form`, `consent`) |
 | `domain` | Domain bucket (e.g. `placement`, `medical`, `training`) |
 | `contexts` | Object: `{ packageCode?, addOnCode?, ... }` for resolver matching |
-| `status` | One of `active`, `deprecated`, `superseded`, `archived` |
+| `status` | One of `active`, `stub`, `deprecated`, `superseded`, `archived` |
 | `path` | File path inside the knowbase repo (e.g. `cookbook/forms/my-form.html`) |
 
 The recipient enriches each entry with `sourceRepo`, `sourceRef`, `sourceUrl`, `mirroredAt`, `syncMode`, and `checksum` automatically.
@@ -627,6 +634,61 @@ Precedence (first hit wins, never varies silently):
 - Response headers: `X-Content-Slug`, `X-Content-Status`, `X-Content-Checksum`, `X-Source-Ref`.
 
 **`GET /api/content-cookbook/_status`** — Drift / integrity diagnostics: last sync time, source ref, validation report (invalid entries + warnings).
+
+### Package / Add-On Entry Point (Recommended)
+
+Use this endpoint when the caller only has a service package code or add-on code and needs the correct guide/supplement entry point.
+
+**`GET /api/content-cookbook/entry-point`**
+
+Query params:
+- `servicePackage` (alias: `packageCode`) — example: `MBH`, `STASS`, `TFFC`, `SU`
+- `addOn` (alias: `addOnCode`) — example: `KIN`, `PPY`, `YTSS`
+- `includeStub` (default `true`) — include `status: stub` content for immediate wiring
+- `includeArchived` (default `false`)
+- `format` — `metadata` (default), `html-url`, or `html`
+
+Examples:
+
+```http
+GET /api/content-cookbook/entry-point?servicePackage=STASS
+GET /api/content-cookbook/entry-point?addOn=KIN
+GET /api/content-cookbook/entry-point?servicePackage=MBH&format=html-url
+```
+
+Example response (`format=metadata`):
+
+```json
+{
+  "context": { "servicePackage": "STASS", "addOn": null },
+  "integrationHint": "Use htmlEndpoint as-is to preserve interactive HTML behavior (JS/CSS) in the calling application.",
+  "entry": {
+    "slug": "stass-care-protocol",
+    "status": "stub",
+    "contentType": "guide-page"
+  },
+  "htmlEndpoint": "/api/content-cookbook/stass-care-protocol/html"
+}
+```
+
+Pulse helper:
+
+```js
+export async function getPackageEntryPoint({ servicePackage, addOn }) {
+  const qs = new URLSearchParams();
+  if (servicePackage) qs.set('servicePackage', servicePackage);
+  if (addOn) qs.set('addOn', addOn);
+
+  const data = await complianceApi.get(`/api/content-cookbook/entry-point?${qs.toString()}`);
+  return {
+    entry: data.entry,
+    htmlEndpoint: `${complianceApi.baseUrl}${data.htmlEndpoint}`
+  };
+}
+```
+
+Integration guidance:
+- Render `htmlEndpoint` as-is (iframe/webview/trusted route shell) so interactive HTML, script behavior, and styling remain intact.
 
 ### Caching
 
