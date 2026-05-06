@@ -4,7 +4,18 @@
 const express = require('express');
 const { marked } = require('marked');
 const router = express.Router();
-const { getAllDocuments, getDocument, getDocumentIndex } = require('../services/knowbase-loader');
+const { getAllDocuments, getDocumentIndex } = require('../services/knowbase-loader');
+
+const BRAND = {
+    primary: '#1b3a5c',
+    primaryDark: '#17314d',
+    accent: '#2c5282',
+    bg: '#f5f7fa',
+    surface: '#ffffff',
+    border: '#e2e8f0',
+    text: '#1f2937',
+    muted: '#6b7280'
+};
 
 /**
  * Generate a URL-safe slug from a document path.
@@ -33,6 +44,19 @@ function findBySlug(slug) {
     return null;
 }
 
+function getDocumentFamily(docPath) {
+    if (docPath.startsWith('policies-procedures/Policy/')) {
+        return { label: 'Policy', theme: 'policy' };
+    }
+    if (docPath.startsWith('policies-procedures/Procedure/')) {
+        return { label: 'Procedure', theme: 'procedure' };
+    }
+    if (docPath.startsWith('policies-procedures/Policy-and-Procedure/')) {
+        return { label: 'Policy and Procedure', theme: 'policy' };
+    }
+    return { label: 'Reference Document', theme: 'default' };
+}
+
 /**
  * Render a self-contained, branded HTML page from markdown content.
  */
@@ -42,6 +66,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified) {
     const modifiedDate = lastModified
         ? new Date(lastModified).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
         : '';
+    const family = getDocumentFamily(docPath);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -50,82 +75,111 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${title} - Refuge House</title>
     <style>
+        :root {
+            --rh-primary: ${BRAND.primary};
+            --rh-primary-dark: ${BRAND.primaryDark};
+            --rh-accent: ${BRAND.accent};
+            --rh-bg: ${BRAND.bg};
+            --rh-surface: ${BRAND.surface};
+            --rh-border: ${BRAND.border};
+            --rh-text: ${BRAND.text};
+            --rh-muted: ${BRAND.muted};
+        }
         *, *::before, *::after { box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             line-height: 1.7;
-            color: #1a1a1a;
-            background: #f8f9fa;
+            color: var(--rh-text);
+            background: var(--rh-bg);
             margin: 0;
             padding: 0;
         }
         .header {
-            background: #1b3a5c;
+            background: linear-gradient(135deg, var(--rh-primary), var(--rh-primary-dark));
             color: white;
-            padding: 1.5rem 2rem;
-            text-align: center;
+            padding: 1.15rem 1.5rem;
+            border-bottom: 4px solid rgba(255,255,255,0.12);
+        }
+        .header-inner {
+            max-width: 980px;
+            margin: 0 auto;
+        }
+        .eyebrow {
+            display: inline-block;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            font-weight: 600;
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 999px;
+            padding: 0.2rem 0.55rem;
+            margin-bottom: 0.5rem;
         }
         .header h1 {
             margin: 0;
-            font-size: 1.3rem;
-            font-weight: 600;
-            letter-spacing: 0.02em;
+            font-size: 1.2rem;
+            font-weight: 650;
+            letter-spacing: 0.01em;
         }
         .header .org-name {
-            font-size: 0.85rem;
-            opacity: 0.85;
-            margin-top: 0.3rem;
+            font-size: 0.84rem;
+            opacity: 0.9;
+            margin-top: 0.28rem;
         }
         .container {
-            max-width: 850px;
-            margin: 2rem auto;
-            background: white;
-            padding: 2.5rem 3rem;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            max-width: 900px;
+            margin: 1.4rem auto;
+            background: var(--rh-surface);
+            padding: 2rem 2.2rem;
+            border-radius: 10px;
+            border: 1px solid var(--rh-border);
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
         }
         .meta {
-            font-size: 0.85rem;
-            color: #666;
-            border-bottom: 1px solid #e9ecef;
-            padding-bottom: 1rem;
-            margin-bottom: 2rem;
+            font-size: 0.84rem;
+            color: var(--rh-muted);
+            border-bottom: 1px solid var(--rh-border);
+            padding-bottom: 0.9rem;
+            margin-bottom: 1.4rem;
         }
-        .content h1 { font-size: 1.6rem; margin-top: 2rem; color: #1b3a5c; }
-        .content h2 { font-size: 1.3rem; margin-top: 1.8rem; color: #1b3a5c; border-bottom: 1px solid #e9ecef; padding-bottom: 0.3rem; }
-        .content h3 { font-size: 1.1rem; margin-top: 1.5rem; color: #2c5282; }
-        .content h4 { font-size: 1rem; margin-top: 1.2rem; color: #2c5282; }
-        .content p { margin: 0.8rem 0; }
-        .content ul, .content ol { padding-left: 1.5rem; }
-        .content li { margin: 0.3rem 0; }
+        .content h1 { font-size: 1.5rem; margin-top: 1.65rem; color: var(--rh-primary); }
+        .content h2 { font-size: 1.22rem; margin-top: 1.45rem; color: var(--rh-primary); border-bottom: 1px solid var(--rh-border); padding-bottom: 0.28rem; }
+        .content h3 { font-size: 1.06rem; margin-top: 1.25rem; color: var(--rh-accent); }
+        .content h4 { font-size: 0.98rem; margin-top: 1rem; color: var(--rh-accent); }
+        .content p { margin: 0.78rem 0; }
+        .content ul, .content ol { padding-left: 1.4rem; }
+        .content li { margin: 0.27rem 0; }
         .content table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-        .content th, .content td { border: 1px solid #dee2e6; padding: 0.5rem 0.75rem; text-align: left; }
-        .content th { background: #f1f3f5; font-weight: 600; }
-        .content blockquote { border-left: 3px solid #1b3a5c; margin: 1rem 0; padding: 0.5rem 1rem; background: #f8f9fa; }
-        .content code { background: #f1f3f5; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.9em; }
-        .content pre { background: #f1f3f5; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+        .content th, .content td { border: 1px solid var(--rh-border); padding: 0.5rem 0.72rem; text-align: left; }
+        .content th { background: #edf2f7; font-weight: 620; }
+        .content blockquote { border-left: 3px solid var(--rh-accent); margin: 1rem 0; padding: 0.5rem 1rem; background: #f8fafc; }
+        .content code { background: #eef2f7; padding: 0.12rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
+        .content pre { background: #eef2f7; padding: 0.9rem; border-radius: 4px; overflow-x: auto; }
         .content pre code { background: none; padding: 0; }
-        .content a { color: #2c5282; }
+        .content a { color: var(--rh-accent); }
         .footer {
             text-align: center;
-            font-size: 0.8rem;
-            color: #999;
-            padding: 2rem;
+            font-size: 0.79rem;
+            color: #97a0ad;
+            padding: 1.6rem;
         }
         @media print {
             body { background: white; }
-            .header { background: #1b3a5c; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .container { box-shadow: none; margin: 0; padding: 1.5rem; }
+            .header { background: var(--rh-primary); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .container { box-shadow: none; margin: 0; border: none; padding: 1rem 0; }
         }
-        @media (max-width: 600px) {
-            .container { padding: 1.5rem 1rem; margin: 1rem; }
+        @media (max-width: 700px) {
+            .container { padding: 1.2rem 1rem; margin: 0.7rem; }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>${title}</h1>
-        <div class="org-name">Refuge House, Inc.</div>
+        <div class="header-inner">
+            <span class="eyebrow">${family.label}</span>
+            <h1>${title}</h1>
+            <div class="org-name">Refuge House, Inc. Compliance Library</div>
+        </div>
     </div>
     <div class="container">
         <div class="meta">
@@ -151,11 +205,13 @@ router.get('/', (req, res) => {
 
     for (const [docPath, doc] of Object.entries(docs)) {
         const slug = pathToSlug(docPath);
+        const family = getDocumentFamily(docPath);
         const entry = {
             slug,
             path: docPath,
             title: docPath.split('/').pop().replace(/\.md$/i, ''),
             category: doc.category,
+            family: family.label,
             lastModified: doc.lastModified,
             url: `/public/documents/${slug}`
         };
@@ -205,6 +261,7 @@ router.get('/:slug', (req, res) => {
             path: docPath,
             title,
             category: doc.category,
+            family: getDocumentFamily(docPath).label,
             lastModified: doc.lastModified,
             content: doc.content
         });
