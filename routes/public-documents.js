@@ -60,11 +60,83 @@ function getDocumentFamily(docPath) {
     return { label: 'Reference Document', theme: 'default' };
 }
 
+function extractRepoPathFromGithubBlobUrl(href) {
+    // Supports: https://github.com/<owner>/<repo>/blob/<branch>/<path>
+    const match = href.match(/github\.com\/[^/]+\/[^/]+\/blob\/[^/]+\/(.+)$/i);
+    if (!match) return null;
+    return match[1] || null;
+}
+
+function normalizeLinkedPath(href) {
+    if (!href) return null;
+
+    // Keep in-page anchors untouched
+    if (href.startsWith('#')) return null;
+
+    let candidate = href.trim();
+
+    // Convert known GitHub blob links back to repo-relative path if possible
+    if (/^https?:\/\//i.test(candidate)) {
+        const extracted = extractRepoPathFromGithubBlobUrl(candidate);
+        if (!extracted) return null;
+        candidate = extracted;
+    }
+
+    // Drop query/hash and normalize prefix
+    candidate = candidate.split('#')[0].split('?')[0];
+    candidate = candidate.replace(/^\.\//, '').replace(/^\//, '');
+
+    try {
+        candidate = decodeURIComponent(candidate);
+    } catch (_err) {
+        // If decode fails, keep original candidate
+    }
+
+    return candidate || null;
+}
+
+function buildDocPathToSlugLookup(allDocs) {
+    const lookup = new Map();
+    for (const docPath of Object.keys(allDocs || {})) {
+        lookup.set(docPath, pathToSlug(docPath));
+    }
+    return lookup;
+}
+
+function rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs) {
+    if (!renderedHtml) return renderedHtml;
+
+    const pathToSlug = buildDocPathToSlugLookup(allDocs);
+
+    return renderedHtml.replace(/href="([^"]+)"/g, (full, href) => {
+        const normalized = normalizeLinkedPath(href);
+        if (!normalized) return full;
+
+        // Special-case root README to About route.
+        if (normalized.toLowerCase() === 'readme.md') {
+            return 'href="/public/documents/about"';
+        }
+
+        if (!normalized.toLowerCase().endsWith('.md')) {
+            return full;
+        }
+
+        const slug = pathToSlug.get(normalized);
+        if (!slug) {
+            // Unknown .md path; leave link as-authored rather than guessing.
+            return full;
+        }
+
+        return `href="/public/documents/${slug}"`;
+    });
+}
+
 /**
  * Render a self-contained, branded HTML page from markdown content.
  */
-function renderHtmlPage(title, markdownContent, docPath, lastModified) {
-    const htmlBody = marked.parse(markdownContent);
+function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) {
+    const renderedHtml = marked.parse(markdownContent);
+    const htmlBody = rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs || {});
     const year = new Date().getFullYear();
     const modifiedDate = lastModified
         ? new Date(lastModified).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -267,7 +339,7 @@ router.get('/about', async (req, res) => {
         return res.send(readme.content);
     }
 
-    const html = renderHtmlPage(title, readme.content, readme.path, readme.lastModified);
+    const html = renderHtmlPage(title, readme.content, readme.path, readme.lastModified, getAllDocuments());
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(html);
 });
@@ -315,7 +387,7 @@ router.get('/:slug', (req, res) => {
     }
 
     // Default: render as branded HTML page
-    const html = renderHtmlPage(title, doc.content, docPath, doc.lastModified);
+    const html = renderHtmlPage(title, doc.content, docPath, doc.lastModified, getAllDocuments());
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
 });
