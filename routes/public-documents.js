@@ -17,6 +17,16 @@ const BRAND = {
     muted: '#6b7280'
 };
 
+const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
+
+function parseRepoUrl(url) {
+    const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/i);
+    if (!match) return null;
+    return { owner: match[1], repo: match[2] };
+}
+
+const KNOWBASE_REPO = parseRepoUrl(KNOWBASE_REPO_URL);
+
 /**
  * Generate a URL-safe slug from a document path.
  * "plans/Emergency Response Disaster Recovery and Business Continuity Plan.md"
@@ -60,11 +70,48 @@ function getDocumentFamily(docPath) {
     return { label: 'Reference Document', theme: 'default' };
 }
 
-function extractRepoPathFromGithubBlobUrl(href) {
-    // Supports: https://github.com/<owner>/<repo>/blob/<branch>/<path>
-    const match = href.match(/github\.com\/[^/]+\/[^/]+\/blob\/[^/]+\/(.+)$/i);
-    if (!match) return null;
-    return match[1] || null;
+function parseHrefParts(href) {
+    const trimmed = String(href || '').trim();
+    if (!trimmed) return null;
+
+    const hashIndex = trimmed.indexOf('#');
+    const queryIndex = trimmed.indexOf('?');
+
+    const splitIndex = [hashIndex, queryIndex]
+        .filter((v) => v >= 0)
+        .sort((a, b) => a - b)[0];
+
+    if (splitIndex === undefined) {
+        return { base: trimmed, suffix: '' };
+    }
+
+    return {
+        base: trimmed.slice(0, splitIndex),
+        suffix: trimmed.slice(splitIndex)
+    };
+}
+
+function extractRepoPathFromGithubHref(baseHref) {
+    if (!KNOWBASE_REPO) return null;
+
+    const owner = KNOWBASE_REPO.owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const repo = KNOWBASE_REPO.repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const patterns = [
+        // github blob links
+        new RegExp(`^https?:\\/\\/github\\.com\\/${owner}\\/${repo}\\/blob\\/[^/]+\\/(.+)$`, 'i'),
+        // github tree links
+        new RegExp(`^https?:\\/\\/github\\.com\\/${owner}\\/${repo}\\/tree\\/[^/]+\\/(.+)$`, 'i'),
+        // raw links
+        new RegExp(`^https?:\\/\\/raw\\.githubusercontent\\.com\\/${owner}\\/${repo}\\/[^/]+\\/(.+)$`, 'i')
+    ];
+
+    for (const pattern of patterns) {
+        const match = baseHref.match(pattern);
+        if (match && match[1]) return match[1];
+    }
+
+    return null;
 }
 
 function normalizeLinkedPath(href) {
@@ -73,17 +120,19 @@ function normalizeLinkedPath(href) {
     // Keep in-page anchors untouched
     if (href.startsWith('#')) return null;
 
-    let candidate = href.trim();
+    const parts = parseHrefParts(href);
+    if (!parts) return null;
 
-    // Convert known GitHub blob links back to repo-relative path if possible
+    let candidate = parts.base;
+
+    // Convert known knowbase GitHub links back to repo-relative path if possible
     if (/^https?:\/\//i.test(candidate)) {
-        const extracted = extractRepoPathFromGithubBlobUrl(candidate);
+        const extracted = extractRepoPathFromGithubHref(candidate);
         if (!extracted) return null;
         candidate = extracted;
     }
 
-    // Drop query/hash and normalize prefix
-    candidate = candidate.split('#')[0].split('?')[0];
+    // Normalize prefix
     candidate = candidate.replace(/^\.\//, '').replace(/^\//, '');
 
     try {
@@ -92,7 +141,10 @@ function normalizeLinkedPath(href) {
         // If decode fails, keep original candidate
     }
 
-    return candidate || null;
+    return {
+        path: candidate || null,
+        suffix: parts.suffix || ''
+    };
 }
 
 function buildDocPathToSlugLookup(allDocs) {
@@ -103,31 +155,49 @@ function buildDocPathToSlugLookup(allDocs) {
     return lookup;
 }
 
+function isKnowbaseRepoRootLink(baseHref) {
+    if (!KNOWBASE_REPO) return false;
+    const owner = KNOWBASE_REPO.owner;
+    const repo = KNOWBASE_REPO.repo;
+    return new RegExp(`^https?:\\/\\/github\\.com\\/${owner}\\/${repo}\\/?$`, 'i').test(baseHref);
+}
+
 function rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs) {
     if (!renderedHtml) return renderedHtml;
 
     const pathToSlug = buildDocPathToSlugLookup(allDocs);
 
     return renderedHtml.replace(/href="([^"]+)"/g, (full, href) => {
+        const parts = parseHrefParts(href);
+        if (!parts) return full;
+
+        if (isKnowbaseRepoRootLink(parts.base)) {
+            return `href="/public/documents/about${parts.suffix || ''}"`;
+        }
+
         const normalized = normalizeLinkedPath(href);
-        if (!normalized) return full;
+        if (!normalized || !normalized.path) return full;
+
+        const normalizedPath = normalized.path;
+        const suffix = normalized.suffix || '';
 
         // Special-case root README to About route.
-        if (normalized.toLowerCase() === 'readme.md') {
-            return 'href="/public/documents/about"';
+        if (normalizedPath.toLowerCase() === 'readme.md') {
+            return `href="/public/documents/about${suffix}"`;
         }
 
-        if (!normalized.toLowerCase().endsWith('.md')) {
+        // Only rewrite markdown doc links for in-app rendering.
+        if (!normalizedPath.toLowerCase().endsWith('.md')) {
             return full;
         }
 
-        const slug = pathToSlug.get(normalized);
+        const slug = pathToSlug.get(normalizedPath);
         if (!slug) {
-            // Unknown .md path; leave link as-authored rather than guessing.
-            return full;
+            // Unknown .md path; keep user in app by routing to docs index.
+            return 'href="/public/documents"';
         }
 
-        return `href="/public/documents/${slug}"`;
+        return `href="/public/documents/${slug}${suffix}"`;
     });
 }
 
