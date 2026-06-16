@@ -112,28 +112,77 @@ router.get('/site-index.json', async (req, res) => {
     });
 });
 
+// Split policies/procedures into sub-groups by their knowbase folder so the
+// manual reads like a manual rather than one long list.
+function docGroupFor(docPath) {
+    const p = String(docPath || '');
+    if (p.startsWith('policies-procedures/Procedure/')) return 'Procedures';
+    if (p.startsWith('policies-procedures/Policy-and-Procedure/')) return 'Policies & Procedures (combined)';
+    return 'Policies';
+}
+
+// Lowercased haystack used by the client-side search box.
+function searchKey(...parts) {
+    return parts.filter(Boolean).join(' ').toLowerCase().replace(/"/g, '');
+}
+
+function renderDocItem(d) {
+    return `<li class="idx-item" data-search="${escapeHtml(searchKey(d.title, d.path, d.category))}">`
+        + `<a href="/public/documents/${escapeHtml(d.slug)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a>`
+        + `<span class="meta">${escapeHtml(d.path)}</span></li>`;
+}
+
+function renderGroupSection(title, itemsHtml, count) {
+    return `<section class="idx-group panel" data-group="${escapeHtml(title)}">
+      <h2>${escapeHtml(title)} <span class="badge"><span class="idx-group-count">${count}</span></span></h2>
+      <ul>${itemsHtml || '<li class="meta">No entries.</li>'}</ul>
+    </section>`;
+}
+
 router.get('/site-index', async (req, res) => {
     const data = await getIndexData();
     noStore(res);
 
-    const policyRows = data.policyProcedureDocs
-        .map((d) => `<li><a href="/public/documents/${escapeHtml(d.slug)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a><span class="meta">${escapeHtml(d.path)}</span></li>`)
+    // Group policies/procedures by sub-type, preserving title sort within each.
+    const docGroups = new Map();
+    for (const d of data.policyProcedureDocs) {
+        const g = docGroupFor(d.path);
+        if (!docGroups.has(g)) docGroups.set(g, []);
+        docGroups.get(g).push(d);
+    }
+    // Stable, sensible order.
+    const groupOrder = ['Policies', 'Procedures', 'Policies & Procedures (combined)'];
+    const orderedGroups = [
+        ...groupOrder.filter((g) => docGroups.has(g)),
+        ...[...docGroups.keys()].filter((g) => !groupOrder.includes(g))
+    ];
+
+    const docSections = orderedGroups
+        .map((g) => {
+            const docs = docGroups.get(g);
+            return renderGroupSection(g, docs.map(renderDocItem).join(''), docs.length);
+        })
         .join('');
 
-    const planRows = data.planDocs
-        .map((d) => `<li><a href="/public/documents/${escapeHtml(d.slug)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a><span class="meta">${escapeHtml(d.path)}</span></li>`)
-        .join('');
+    const planRows = data.planDocs.map(renderDocItem).join('');
 
     const resourceRows = data.staticResourcesAndGuides
-        .map((r) => `<li><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a><span class="meta">${escapeHtml(r.type)}${r.contentType ? ` · ${escapeHtml(r.contentType)}` : ''}${r.domain ? ` · ${escapeHtml(r.domain)}` : ''}</span></li>`)
+        .map((r) => {
+            const metaBits = [r.type, r.contentType, r.domain].filter(Boolean).join(' · ');
+            return `<li class="idx-item" data-search="${escapeHtml(searchKey(r.title, r.type, r.contentType, r.domain, r.sourcePath))}">`
+                + `<a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>`
+                + `<span class="meta">${escapeHtml(metaBits)}</span></li>`;
+        })
         .join('');
+
+    const totalItems = data.policyProcedureDocs.length + data.planDocs.length + data.staticResourcesAndGuides.length;
 
     res.type('html').send(`<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Site Index - Refuge House Compliance API</title>
+  <title>Policy Manual & Site Index - Refuge House Compliance</title>
   <link rel="icon" type="image/png" href="/favicon.png" />
   <style>
     :root {
@@ -147,53 +196,74 @@ router.get('/site-index', async (req, res) => {
       --rh-text: #1e293b;
       --rh-muted: #475569;
     }
-    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; margin: 0; background: var(--rh-bg); color: var(--rh-text); }
-    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 40px; }
-    h1 { margin: 0 0 6px; }
-    .subtitle { color: var(--rh-muted); margin: 0 0 18px; }
-    .topbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
-    .btn { display:inline-block; padding: 8px 12px; border:1px solid #d4b5e4; border-radius: 8px; background: var(--rh-light-purple); color: var(--rh-primary); text-decoration:none; font-size: 14px; }
-    .btn:hover { background: #ead8f4; }
-    .panel { background: var(--rh-surface); border: 1px solid var(--rh-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
-    .counts { font-size: 13px; color: var(--rh-muted); margin-bottom: 12px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    ul { margin: 0; padding-left: 18px; max-height: 520px; overflow: auto; }
-    li { margin: 0 0 8px; }
-    .meta { display: block; font-size: 12px; color: var(--rh-muted); }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; margin: 0; background: var(--rh-bg); color: var(--rh-text); line-height: 1.6; }
+    .rh-header { background: linear-gradient(135deg,var(--rh-primary-dark) 0%,var(--rh-primary) 50%,var(--rh-accent) 100%); color:#fff; padding: 1.4rem 1.5rem 1.2rem; }
+    .rh-header .eyebrow { font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; opacity:.92; font-weight:600; }
+    .rh-header h1 { margin:.3rem 0 .4rem; font-size:1.5rem; }
+    .rh-header p { margin:0; font-size:.9rem; opacity:.95; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+    .topbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 14px 0; }
+    .btn { display:inline-block; padding:8px 12px; border:1px solid #d4b5e4; border-radius:8px; background: var(--rh-light-purple); color: var(--rh-primary); text-decoration:none; font-size:14px; }
+    .btn:hover { background:#ead8f4; }
+    .portal-card { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap;
+      background: var(--rh-light-purple); border:1px solid #d4b5e4; border-radius:12px; padding:14px 16px; margin-bottom:16px; }
+    .portal-card .pc-title { font-weight:700; color: var(--rh-primary-dark); }
+    .portal-card .pc-sub { font-size:.85rem; color: var(--rh-muted); }
+    .portal-card a.go { background: var(--rh-primary); color:#fff; border:none; border-radius:8px; padding:.5rem .9rem; text-decoration:none; font-weight:600; font-size:.86rem; }
+    .searchbar { position:sticky; top:0; z-index:10; background: var(--rh-bg); padding:8px 0 12px; }
+    .searchbar input { width:100%; padding:.6rem .75rem; border:1px solid var(--rh-border); border-radius:10px; font-size:.95rem; }
+    .counts { font-size:13px; color: var(--rh-muted); margin: 4px 0 14px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; align-items:start; }
+    .panel { background: var(--rh-surface); border:1px solid var(--rh-border); border-radius:10px; padding:12px 16px; margin-bottom:14px; }
+    .panel h2 { font-size:1rem; margin:.2rem 0 .6rem; color: var(--rh-primary-dark); display:flex; align-items:center; gap:.5rem; }
+    .badge { font-size:.7rem; font-weight:700; color: var(--rh-primary); background: var(--rh-light-purple); border:1px solid #d4b5e4; border-radius:999px; padding:.05rem .5rem; }
+    ul { margin:0; padding-left:18px; max-height: 460px; overflow:auto; }
+    li { margin:0 0 8px; }
+    .meta { display:block; font-size:12px; color: var(--rh-muted); }
     a { color: var(--rh-accent); }
+    #idx-empty { display:none; }
+    #idx-empty[hidden] { display:none; }
     @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
+  <header class="rh-header">
+    <span class="eyebrow">Refuge House, Inc. · Compliance</span>
+    <h1>Policy Manual &amp; Site Index</h1>
+    <p>Browse and search every policy, procedure, plan, and resource published through the Compliance API.</p>
+  </header>
   <main class="wrap">
-    <h1>Site Index</h1>
-    <p class="subtitle">Public index of key content available through the Compliance API.</p>
     <div class="topbar">
-      <a class="btn" href="/">← Back to Compliance Library</a>
+      <a class="btn" href="/">← Compliance Library</a>
       <a class="btn" href="/site-index.json" target="_blank" rel="noopener">View JSON Index</a>
     </div>
 
-    <section class="panel counts">
-      Generated: ${escapeHtml(data.generatedAt)} · Policies/Procedures: ${data.policyProcedureDocs.length} · Plans: ${data.planDocs.length} · Static Resources & Guides: ${data.staticResourcesAndGuides.length}
-    </section>
+    <div class="portal-card">
+      <div>
+        <div class="pc-title">FY-26 SSCC Joint Monitoring — Desk Review</div>
+        <div class="pc-sub">Interactive reviewer workspace mapping each monitoring item to its policy and documents.</div>
+      </div>
+      <a class="go" href="/review/fy26-sscc">Open desk review →</a>
+    </div>
 
-    <section class="grid">
-      <section class="panel">
-        <h2>Policies and Procedures</h2>
-        <ul>${policyRows || '<li>No entries found.</li>'}</ul>
-      </section>
+    <div class="searchbar">
+      <input type="search" id="idx-search" placeholder="Search policies, procedures, plans, resources…" autocomplete="off" />
+    </div>
+    <p class="counts">Generated ${escapeHtml(data.generatedAt)} · Showing <strong id="idx-visible">${totalItems}</strong> of ${totalItems} items · Policies/Procedures: ${data.policyProcedureDocs.length} · Plans: ${data.planDocs.length} · Resources &amp; Guides: ${data.staticResourcesAndGuides.length}</p>
+    <p class="counts" id="idx-empty">No items match your search.</p>
 
-      <section class="panel">
-        <h2>Plans</h2>
-        <ul>${planRows || '<li>No entries found.</li>'}</ul>
-      </section>
-
-      <section class="panel">
-        <h2>Static Resources and Guides</h2>
-        <ul>${resourceRows || '<li>No entries found.</li>'}</ul>
-      </section>
-    </section>
+    <div class="grid">
+      <div>
+        ${docSections}
+      </div>
+      <div>
+        ${renderGroupSection('Plans', planRows, data.planDocs.length)}
+        ${renderGroupSection('Resources & Guides', resourceRows, data.staticResourcesAndGuides.length)}
+      </div>
+    </div>
   </main>
+  <script src="/site-index.js"></script>
 </body>
 </html>`);
 });
