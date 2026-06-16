@@ -124,6 +124,10 @@ app.use('/api/compliance/webhooks', complianceWebhookRoutes); // Pulse webhooks 
 const publicDocumentRoutes = require('./routes/public-documents');
 app.use('/public/documents', publicDocumentRoutes);            // Shareable rendered documents
 
+// Public binary files (PDF/PNG/DOCX) streamed from the knowbase repo on demand
+const publicFileRoutes = require('./routes/public-files');
+app.use('/public/files', publicFileRoutes);                    // Binary documents (allowlisted)
+
 // Startup
 async function start() {
     // Sync knowbase repo on startup
