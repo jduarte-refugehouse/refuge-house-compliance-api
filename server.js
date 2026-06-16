@@ -90,6 +90,10 @@ app.use('/api', (req, res, next) => {
     next();
 });
 
+// Protected admin operations (manual knowbase re-sync, etc.) — behind the /api key gate
+const adminRoutes = require('./routes/admin');
+app.use('/api/admin', adminRoutes);
+
 app.use('/api/chat', chatRoutes);             // Natural language policy Q&A
 app.use('/api/generate', generateRoutes);     // Plan/document generation from child data
 app.use('/api/evaluate', evaluateRoutes);     // Structured compliance evaluations

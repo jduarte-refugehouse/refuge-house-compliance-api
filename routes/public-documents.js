@@ -29,6 +29,15 @@ function parseRepoUrl(url) {
 
 const KNOWBASE_REPO = parseRepoUrl(KNOWBASE_REPO_URL);
 
+// These documents are rendered live from the synced knowbase and must always
+// reflect the latest push to main. Forbid CDN/Front Door caching so external
+// reviewers never see a stale policy. (A short max-age would still risk serving
+// outdated compliance documents during a review window.)
+function noStore(res) {
+    res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+}
+
 /**
  * Generate a URL-safe slug from a document path.
  * "plans/Emergency Response Disaster Recovery and Business Continuity Plan.md"
@@ -362,6 +371,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
 
 // GET /public/documents - List all publicly available documents with their slugs
 router.get('/', (req, res) => {
+    noStore(res);
     const docs = getAllDocuments();
     const index = getDocumentIndex();
     const listing = [];
@@ -395,6 +405,7 @@ router.get('/', (req, res) => {
 
 // GET /public/documents/about - Render knowbase root README as branded About page
 router.get('/about', async (req, res) => {
+    noStore(res);
     await refreshIfStale();
     const readme = getKnowbaseReadme();
     if (!readme) {
@@ -436,6 +447,7 @@ router.get('/about', async (req, res) => {
 //   ?format=json   — return JSON instead of HTML (for app embedding)
 //   ?format=markdown — return raw markdown text
 router.get('/:slug', (req, res) => {
+    noStore(res);
     const { slug } = req.params;
     const format = req.query.format || 'html';
 

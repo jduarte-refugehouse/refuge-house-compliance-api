@@ -33,18 +33,28 @@ async function getIndexData() {
     }
 
     const allDocs = Object.entries(getAllDocuments());
+    const toEntry = ([docPath, doc]) => ({
+        path: docPath,
+        title: docPath.split('/').pop().replace(/\.md$/i, ''),
+        slug: pathToSlug(docPath),
+        category: doc?.category || null
+    });
+
     const policyProcedureDocs = allDocs
         .filter(([docPath]) =>
             docPath.startsWith('policies-procedures/Policy/') ||
             docPath.startsWith('policies-procedures/Procedure/') ||
             docPath.startsWith('policies-procedures/Policy-and-Procedure/')
         )
-        .map(([docPath, doc]) => ({
-            path: docPath,
-            title: docPath.split('/').pop().replace(/\.md$/i, ''),
-            slug: pathToSlug(docPath),
-            category: doc?.category || null
-        }))
+        .map(toEntry)
+        .sort((a, b) => a.title.localeCompare(b.title));
+
+    // Plans live under plans/ in the knowbase (Staff Roster, Accreditation
+    // Statement, Professional Staffing Plan, etc.). They are already loaded by
+    // the knowbase loader; surface them here so the index reflects them too.
+    const planDocs = allDocs
+        .filter(([docPath]) => docPath.startsWith('plans/') && docPath.toLowerCase().endsWith('.md'))
+        .map(toEntry)
         .sort((a, b) => a.title.localeCompare(b.title));
 
     const staticPages = Object.entries(getAllStaticPages())
@@ -73,27 +83,44 @@ async function getIndexData() {
     return {
         generatedAt: new Date().toISOString(),
         policyProcedureDocs,
+        planDocs,
         staticResourcesAndGuides: [...staticPages, ...cookbookEntries]
     };
 }
 
+// The site index must always reflect the latest synced knowbase. Front Door /
+// any CDN in front of the API would otherwise pin an old response (and a frozen
+// generatedAt), so explicitly forbid caching of these dynamic index endpoints.
+function noStore(res) {
+    res.setHeader('Cache-Control', 'no-store, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+}
+
 router.get('/site-index.json', async (req, res) => {
     const data = await getIndexData();
+    noStore(res);
     res.json({
         generatedAt: data.generatedAt,
         counts: {
             policyProcedure: data.policyProcedureDocs.length,
+            plans: data.planDocs.length,
             staticResourcesAndGuides: data.staticResourcesAndGuides.length
         },
         policyProcedureDocs: data.policyProcedureDocs,
+        planDocs: data.planDocs,
         staticResourcesAndGuides: data.staticResourcesAndGuides
     });
 });
 
 router.get('/site-index', async (req, res) => {
     const data = await getIndexData();
+    noStore(res);
 
     const policyRows = data.policyProcedureDocs
+        .map((d) => `<li><a href="/public/documents/${escapeHtml(d.slug)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a><span class="meta">${escapeHtml(d.path)}</span></li>`)
+        .join('');
+
+    const planRows = data.planDocs
         .map((d) => `<li><a href="/public/documents/${escapeHtml(d.slug)}" target="_blank" rel="noopener">${escapeHtml(d.title)}</a><span class="meta">${escapeHtml(d.path)}</span></li>`)
         .join('');
 
@@ -147,13 +174,18 @@ router.get('/site-index', async (req, res) => {
     </div>
 
     <section class="panel counts">
-      Generated: ${escapeHtml(data.generatedAt)} · Policies/Procedures: ${data.policyProcedureDocs.length} · Static Resources & Guides: ${data.staticResourcesAndGuides.length}
+      Generated: ${escapeHtml(data.generatedAt)} · Policies/Procedures: ${data.policyProcedureDocs.length} · Plans: ${data.planDocs.length} · Static Resources & Guides: ${data.staticResourcesAndGuides.length}
     </section>
 
     <section class="grid">
       <section class="panel">
         <h2>Policies and Procedures</h2>
         <ul>${policyRows || '<li>No entries found.</li>'}</ul>
+      </section>
+
+      <section class="panel">
+        <h2>Plans</h2>
+        <ul>${planRows || '<li>No entries found.</li>'}</ul>
       </section>
 
       <section class="panel">
