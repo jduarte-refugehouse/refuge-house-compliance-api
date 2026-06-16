@@ -32,6 +32,13 @@ let _staticPages = {};
 let _rootReadme = null;
 let _lastRefresh = 0;
 let _manifest = null;
+// FY-26 SSCC desk-review manifest (JSON). Drives the /review/fy26-sscc portal.
+// It is JSON (not .md/.html), so the normal document/page loaders skip it — we
+// fetch and cache it explicitly during sync, the same way the AI-retrieval
+// document-manifest.json is loaded.
+let _deskReviewManifest = null;
+const DESK_REVIEW_MANIFEST_PATH =
+    'temporary-reference/fy26-sscc-joint-monitoring/desk-review-document-manifest.json';
 
 // Persistent index cache — survives restarts, avoids re-indexing unchanged documents
 const INDEX_CACHE_DIR = process.env.INDEX_CACHE_DIR || path.join(__dirname, '..', 'data');
@@ -199,7 +206,8 @@ async function syncKnowbase() {
     }
 
     // Load manifest if it exists, and build the document index
-    loadManifest(tree);
+    await loadManifest(tree);
+    await loadDeskReviewManifest(tree);
     buildDocumentIndex();
     _lastRefresh = Date.now();
 
@@ -212,6 +220,11 @@ async function syncKnowbase() {
         console.log(`[KNOWBASE] Document manifest loaded with ${Object.keys(_manifest).filter(k => k !== '_comment').length} evaluation types`);
     } else {
         console.log('[KNOWBASE] No document-manifest.json found (chat will use all docs, evaluations will use all docs)');
+    }
+    if (_deskReviewManifest && Array.isArray(_deskReviewManifest.items)) {
+        console.log(`[KNOWBASE] Desk-review manifest loaded with ${_deskReviewManifest.items.length} items`);
+    } else {
+        console.log(`[KNOWBASE] No desk-review manifest found at ${DESK_REVIEW_MANIFEST_PATH} (/review/fy26-sscc will be unavailable)`);
     }
 
     // Sync with compliance document registry (Phase 6)
@@ -244,6 +257,35 @@ async function loadManifest(tree) {
     } else {
         _manifest = null;
     }
+}
+
+/**
+ * Load the FY-26 SSCC desk-review manifest from the repo tree. Cached in memory
+ * and exposed via getDeskReviewManifest() for the /review/fy26-sscc portal.
+ */
+async function loadDeskReviewManifest(tree) {
+    const file = tree.tree.find(
+        (item) => item.type === 'blob' && item.path === DESK_REVIEW_MANIFEST_PATH
+    );
+    if (!file) {
+        _deskReviewManifest = null;
+        return;
+    }
+    try {
+        const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
+        const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+        _deskReviewManifest = JSON.parse(content);
+    } catch (err) {
+        console.warn('[KNOWBASE] Failed to parse desk-review manifest:', err.message);
+        _deskReviewManifest = null;
+    }
+}
+
+/**
+ * Get the FY-26 SSCC desk-review manifest (or null if not loaded).
+ */
+function getDeskReviewManifest() {
+    return _deskReviewManifest;
 }
 
 /**
@@ -604,6 +646,7 @@ module.exports = {
     syncKnowbase,
     buildDocumentIndex,
     getManifest,
+    getDeskReviewManifest,
     getDocument,
     getDocumentsByPath,
     getDocumentsByCategory,
