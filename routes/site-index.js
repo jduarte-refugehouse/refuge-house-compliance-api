@@ -44,7 +44,8 @@ async function getIndexData() {
         .filter(([docPath]) =>
             docPath.startsWith('policies-procedures/Policy/') ||
             docPath.startsWith('policies-procedures/Procedure/') ||
-            docPath.startsWith('policies-procedures/Policy-and-Procedure/')
+            docPath.startsWith('policies-procedures/Policy-and-Procedure/') ||
+            (docPath.startsWith('personnel-hr/') && docPath.toLowerCase().endsWith('.md'))
         )
         .map(toEntry)
         .sort((a, b) => a.title.localeCompare(b.title));
@@ -118,6 +119,7 @@ function docGroupFor(docPath) {
     const p = String(docPath || '');
     if (p.startsWith('policies-procedures/Procedure/')) return 'Procedures';
     if (p.startsWith('policies-procedures/Policy-and-Procedure/')) return 'Policies & Procedures (combined)';
+    if (p.startsWith('personnel-hr/')) return 'Personnel & HR';
     return 'Policies';
 }
 
@@ -151,7 +153,7 @@ router.get('/site-index', async (req, res) => {
         docGroups.get(g).push(d);
     }
     // Stable, sensible order.
-    const groupOrder = ['Policies', 'Procedures', 'Policies & Procedures (combined)'];
+    const groupOrder = ['Policies', 'Procedures', 'Policies & Procedures (combined)', 'Personnel & HR'];
     const orderedGroups = [
         ...groupOrder.filter((g) => docGroups.has(g)),
         ...[...docGroups.keys()].filter((g) => !groupOrder.includes(g))
