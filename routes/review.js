@@ -45,23 +45,33 @@ function noStore(res) {
     res.setHeader('Pragma', 'no-cache');
 }
 
-// Assign each manifest item to a display group. `all-*` items are the shared
-// "All SSCCs" block; everything else (disruption-*, satisfaction-*, etc.) is a
-// cross-/per-SSCC item.
-function groupKeyFor(item) {
-    return String(item.item || '').startsWith('all-') ? 'all' : 'cross';
+function slugifyGroup(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
-const GROUP_META = {
-    all: {
-        title: 'All SSCCs Monitoring Items — Desk Review',
-        scope: 'Shared — one reviewer group reviews these once on behalf of every SSCC.'
-    },
-    cross: {
-        title: 'Cross-SSCC & Per-SSCC Items',
-        scope: 'Items that apply across, or vary by, individual SSCC.'
+// Assign each manifest item to a display group. `all-*` items are the shared
+// "All SSCCs" block; every other item is grouped by its `sscc` field, giving
+// one collapsible group per individual SSCC (mirrors the monitoring tool).
+function groupKeyFor(item) {
+    if (String(item.item || '').startsWith('all-')) return 'all';
+    if (item.sscc) return slugifyGroup(item.sscc);
+    return 'other';
+}
+
+// Title + scope for a group, given its key and a representative item.
+function groupMetaFor(key, sampleItem) {
+    if (key === 'all') {
+        return {
+            title: 'All SSCCs Monitoring Items — Desk Review',
+            scope: 'Shared — one reviewer group reviews these once on behalf of every SSCC.'
+        };
     }
-};
+    if (key === 'other') {
+        return { title: 'Other Items', scope: 'Items not tied to a specific SSCC.' };
+    }
+    const name = (sampleItem && sampleItem.sscc) || key;
+    return { title: `${name} Monitoring Items`, scope: `Desk-review items specific to ${name}.` };
+}
 
 function initialClassification(item) {
     if (item && VALID_CLASSIFICATIONS.includes(item.classification)) return item.classification;
@@ -141,15 +151,15 @@ function renderItem(item) {
 </div>`;
 }
 
-function renderGroup(key, items) {
-    const meta = GROUP_META[key] || { title: key, scope: '' };
-    const rows = items.map(renderItem).join('');
-    return `<section class="group" data-group="${escapeHtml(key)}">
+function renderGroup(group) {
+    const meta = groupMetaFor(group.key, group.items[0]);
+    const rows = group.items.map(renderItem).join('');
+    return `<section class="group" data-group="${escapeHtml(group.key)}">
   <button class="group-head" aria-expanded="true">
     <span class="group-title">${escapeHtml(meta.title)}</span>
     <span class="group-meta">
       <span class="g-scope">${escapeHtml(meta.scope)}</span>
-      <span class="g-count" data-count="${escapeHtml(key)}"></span>
+      <span class="g-count" data-count="${escapeHtml(group.key)}"></span>
       <span class="caret">▾</span>
     </span>
   </button>
@@ -160,11 +170,20 @@ function renderGroup(key, items) {
 function renderPage(manifest) {
     const items = Array.isArray(manifest.items) ? manifest.items : [];
 
-    // Preserve manifest order within two groups.
-    const grouped = { all: [], cross: [] };
-    items.forEach((it) => { grouped[groupKeyFor(it)].push(it); });
-    const groupKeys = ['all', 'cross'].filter((k) => grouped[k].length > 0);
-    const groupsHtml = groupKeys.map((k) => renderGroup(k, grouped[k])).join('');
+    // Build groups in first-appearance order (All SSCCs, then one per SSCC).
+    const groups = [];
+    const byKey = new Map();
+    for (const it of items) {
+        const key = groupKeyFor(it);
+        if (!byKey.has(key)) {
+            const g = { key, items: [] };
+            byKey.set(key, g);
+            groups.push(g);
+        }
+        byKey.get(key).items.push(it);
+    }
+    const groupKeys = groups.map((g) => g.key);
+    const groupsHtml = groups.map(renderGroup).join('');
 
     const needsPush = Array.isArray(manifest.needsPush) ? manifest.needsPush : [];
     const pushBanner = needsPush.length > 0
