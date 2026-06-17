@@ -6,6 +6,8 @@ const router = express.Router();
 const { getAllDocuments, getAllStaticPages } = require('../services/knowbase-loader');
 const cookbook = require('../services/content-cookbook');
 const { applyCookbookBranding } = require('../utils/cookbook-branding');
+const { allows } = require('../middleware/human-auth');
+const { accessForDoc } = require('../utils/access');
 
 function pathToSlug(docPath) {
     const basename = String(docPath || '').split('/').pop().replace(/\.md$/i, '');
@@ -24,7 +26,7 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-async function getIndexData() {
+async function getIndexData(req) {
     try {
         await cookbook.refreshIfStale();
     } catch (err) {
@@ -37,8 +39,13 @@ async function getIndexData() {
         path: docPath,
         title: docPath.split('/').pop().replace(/\.md$/i, ''),
         slug: pathToSlug(docPath),
-        category: doc?.category || null
+        category: doc?.category || null,
+        access: accessForDoc(doc)
     });
+
+    // Hide entries the caller cannot open, so the manual never advertises gated
+    // documents to people who can't view them.
+    const visible = (entry) => allows(req, entry.access);
 
     const policyProcedureDocs = allDocs
         .filter(([docPath]) =>
@@ -48,6 +55,7 @@ async function getIndexData() {
             (docPath.startsWith('personnel-hr/') && docPath.toLowerCase().endsWith('.md'))
         )
         .map(toEntry)
+        .filter(visible)
         .sort((a, b) => a.title.localeCompare(b.title));
 
     // Plans live under plans/ in the knowbase (Staff Roster, Accreditation
@@ -56,6 +64,7 @@ async function getIndexData() {
     const planDocs = allDocs
         .filter(([docPath]) => docPath.startsWith('plans/') && docPath.toLowerCase().endsWith('.md'))
         .map(toEntry)
+        .filter(visible)
         .sort((a, b) => a.title.localeCompare(b.title));
 
     const staticPages = Object.entries(getAllStaticPages())
@@ -98,7 +107,7 @@ function noStore(res) {
 }
 
 router.get('/site-index.json', async (req, res) => {
-    const data = await getIndexData();
+    const data = await getIndexData(req);
     noStore(res);
     res.json({
         generatedAt: data.generatedAt,
@@ -142,7 +151,7 @@ function renderGroupSection(title, itemsHtml, count) {
 }
 
 router.get('/site-index', async (req, res) => {
-    const data = await getIndexData();
+    const data = await getIndexData(req);
     noStore(res);
 
     // Group policies/procedures by sub-type, preserving title sort within each.

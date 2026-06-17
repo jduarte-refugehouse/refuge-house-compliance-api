@@ -5,6 +5,8 @@ const express = require('express');
 const { marked } = require('marked');
 const router = express.Router();
 const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
+const { allows, deny } = require('../middleware/human-auth');
+const { accessForDoc } = require('../utils/access');
 
 const BRAND = {
     primary: '#5E3989',
@@ -377,6 +379,11 @@ router.get('/', (req, res) => {
     const listing = [];
 
     for (const [docPath, doc] of Object.entries(docs)) {
+        // Only list documents the caller is allowed to open, so the index can't be
+        // used to enumerate gated content.
+        const tier = accessForDoc(doc);
+        if (!allows(req, tier)) continue;
+
         const slug = pathToSlug(docPath);
         const family = getDocumentFamily(docPath);
         const entry = {
@@ -384,6 +391,7 @@ router.get('/', (req, res) => {
             path: docPath,
             title: docPath.split('/').pop().replace(/\.md$/i, ''),
             category: doc.category,
+            access: tier,
             family: family.label,
             lastModified: doc.lastModified,
             url: `/public/documents/${slug}`
@@ -468,6 +476,13 @@ router.get('/:slug', (req, res) => {
     }
 
     const { path: docPath, doc } = result;
+
+    // Enforce the document's own access tier (default-restrictive = staff).
+    const tier = accessForDoc(doc);
+    if (!allows(req, tier)) {
+        return deny(req, res, tier);
+    }
+
     const title = docPath.split('/').pop().replace(/\.md$/i, '');
 
     if (format === 'json') {

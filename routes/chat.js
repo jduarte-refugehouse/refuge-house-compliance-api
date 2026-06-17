@@ -55,7 +55,7 @@ router.post('/', async (req, res) => {
     }
 
     try {
-        const result = await chat(message.trim(), history || []);
+        const result = await chat(message.trim(), history || [], { audience: req.chatAudience || 'full' });
         res.json(result);
     } catch (err) {
         console.error('[CHAT] Error:', err);
@@ -105,7 +105,7 @@ router.post('/stream', async (req, res) => {
     });
 
     try {
-        for await (const event of chatStream(message.trim(), history || [])) {
+        for await (const event of chatStream(message.trim(), history || [], { audience: req.chatAudience || 'full' })) {
             res.write(`data: ${JSON.stringify(event)}\n\n`);
         }
     } catch (err) {

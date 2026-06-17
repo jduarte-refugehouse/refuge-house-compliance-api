@@ -17,9 +17,11 @@ process.on('unhandledRejection', (reason, promise) => {
 
 const path = require('path');
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const { syncKnowbase } = require('./services/knowbase-loader');
 const cookbook = require('./services/content-cookbook');
 const { publicConsoleProtection } = require('./middleware/public-console-protection');
+const { attachCaller, requireTier } = require('./middleware/human-auth');
 
 const app = express();
 const PORT = process.env.PORT || 3100;
@@ -54,9 +56,26 @@ app.use('/webhooks/github', githubWebhookRoutes);
 
 // Middleware
 app.use(express.json({ limit: '5mb' }));
+app.use(cookieParser());
 
 // Serve test console UI
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Human-plane authorization: resolve the caller (staff via Easy Auth / reviewer
+// via rolling key / public) and run the ?key= -> httpOnly cookie handshake. This
+// only touches non-/api, non-/webhooks requests and never blocks here — routes
+// decide per resource via requireTier()/allows().
+app.use(attachCaller);
+
+// Decide the chat audience for the public console: staff/reviewer get the full
+// corpus; everyone else is scoped to public-tier docs so the console can't be
+// used to scrape gated content. (Off/log mode keeps it full to preserve dev UX.)
+function consoleAudience(req, res, next) {
+    const c = req.caller;
+    const restrict = c && c.mode === 'enforce' && !c.isStaff && !c.isReviewer;
+    req.chatAudience = restrict ? 'public' : 'full';
+    next();
+}
 
 // Routes — Knowledge Assistant (Phase 1)
 const healthRoutes = require('./routes/health');
@@ -69,11 +88,15 @@ const documentsRoutes = require('./routes/documents');
 const pagesRoutes = require('./routes/pages');
 const siteIndexRoutes = require('./routes/site-index');
 const reviewRoutes = require('./routes/review');
-app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc.
-app.use('/review', reviewRoutes); // Desk-review portals (FY-26 SSCC Joint Monitoring)
-app.use('/', siteIndexRoutes);    // Public Site Index for policies/procedures + HTML resources
-app.use('/console/chat', publicConsoleProtection, chatRoutes); // Public console chat with abuse controls
+app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc. (public)
+app.use('/review', requireTier('reviewer'), reviewRoutes); // Desk-review portals — reviewer tier (key or staff)
+app.use('/', siteIndexRoutes);    // Site Index — listing filtered per caller tier
+app.use('/console/chat', publicConsoleProtection, consoleAudience, chatRoutes); // Public console chat (audience-scoped)
 app.use('/', healthRoutes);
+
+// Staff-only view (Entra) that surfaces the current reviewer link to copy.
+const staffRoutes = require('./routes/staff');
+app.use('/staff', requireTier('staff'), staffRoutes);
 
 // API key authentication for service-to-service calls
 app.use('/api', (req, res, next) => {

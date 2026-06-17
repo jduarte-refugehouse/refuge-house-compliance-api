@@ -18,6 +18,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const path = require('path');
 const {
     getAllDocuments,
+    getPublicDocuments,
     getDocumentIndex,
     refreshIfStale,
     formatDocumentsAsContext,
@@ -76,11 +77,13 @@ TONE:
  * This is what Claude sees in Pass 1 to decide which documents to retrieve.
  * Much richer than raw previews — includes topics, regulations, and packages.
  */
-function buildDocumentCatalog() {
+function buildDocumentCatalog(allowedPaths) {
     const index = getDocumentIndex();
     const entries = [];
 
     for (const [docPath, idx] of Object.entries(index)) {
+        // When scoped (e.g. the public console), only catalog allowed documents.
+        if (allowedPaths && !allowedPaths.has(docPath)) continue;
         const fileName = path.basename(docPath, '.md');
         let entry = `- [${fileName}] (${docPath})\n`;
         entry += `  Category: ${idx.category} | ~${idx.tokenEstimate} tokens\n`;
@@ -178,17 +181,24 @@ Example response:
  * @param {Array<{role: string, content: string}>} history - Previous messages in the conversation
  * @returns {Promise<object>} Response with answer, citations, and metadata
  */
-async function chat(message, history = []) {
+async function chat(message, history = [], options = {}) {
     await refreshIfStale();
 
-    const allDocs = getAllDocuments();
+    // Audience scoping: the public console ('public') only sees public-tier docs
+    // so it cannot be used to extract gated content; staff/reviewer get 'full'.
+    const publicOnly = options.audience === 'public';
+    const allDocs = publicOnly ? getPublicDocuments() : getAllDocuments();
+    const allowedPaths = publicOnly ? new Set(Object.keys(allDocs)) : null;
     const allDocCount = Object.keys(allDocs).length;
     const totalTokens = estimateTokens(allDocs);
 
-    console.log(`[CHAT] Question: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`);
-    console.log(`[CHAT] Full knowbase: ${allDocCount} documents, ~${totalTokens} estimated tokens`);
+    console.log(`[CHAT] Question: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}" (audience: ${publicOnly ? 'public' : 'full'})`);
+    console.log(`[CHAT] Knowbase in scope: ${allDocCount} documents, ~${totalTokens} estimated tokens`);
 
     if (allDocCount === 0) {
+        if (publicOnly) {
+            throw new Error('No publicly available documents are loaded for the public console.');
+        }
         throw new Error('No documents loaded. The knowbase may not have synced. Try POST /api/documents/refresh');
     }
 
@@ -205,7 +215,7 @@ async function chat(message, history = []) {
         retrievalMethod = 'two-pass';
         console.log(`[CHAT] Knowbase too large (${totalTokens} tokens), using two-pass retrieval`);
 
-        const catalog = buildDocumentCatalog();
+        const catalog = buildDocumentCatalog(allowedPaths);
         const selectedPaths = await selectDocuments(message, history, catalog, allDocCount);
 
         if (selectedPaths) {
@@ -383,18 +393,22 @@ function keywordSelect(message, history, allDocs) {
  * @param {Array<{role: string, content: string}>} history - Previous messages
  * @yields {{ type: string, data: any }} Events: 'meta', 'text', 'done', 'error'
  */
-async function* chatStream(message, history = []) {
+async function* chatStream(message, history = [], options = {}) {
     await refreshIfStale();
 
-    const allDocs = getAllDocuments();
+    const publicOnly = options.audience === 'public';
+    const allDocs = publicOnly ? getPublicDocuments() : getAllDocuments();
+    const allowedPaths = publicOnly ? new Set(Object.keys(allDocs)) : null;
     const allDocCount = Object.keys(allDocs).length;
     const totalTokens = estimateTokens(allDocs);
 
-    console.log(`[CHAT] Question: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"`);
-    console.log(`[CHAT] Full knowbase: ${allDocCount} documents, ~${totalTokens} estimated tokens`);
+    console.log(`[CHAT] Question: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}" (audience: ${publicOnly ? 'public' : 'full'})`);
+    console.log(`[CHAT] Knowbase in scope: ${allDocCount} documents, ~${totalTokens} estimated tokens`);
 
     if (allDocCount === 0) {
-        yield { type: 'error', data: 'No documents loaded. The knowbase may not have synced.' };
+        yield { type: 'error', data: publicOnly
+            ? 'No publicly available documents are loaded for the public console.'
+            : 'No documents loaded. The knowbase may not have synced.' };
         return;
     }
 
@@ -410,7 +424,7 @@ async function* chatStream(message, history = []) {
         console.log(`[CHAT] Knowbase too large (${totalTokens} tokens), using two-pass retrieval`);
 
         // Use a fast model for document selection (Pass 1)
-        const catalog = buildDocumentCatalog();
+        const catalog = buildDocumentCatalog(allowedPaths);
         const selectedPaths = await selectDocuments(message, history, catalog, allDocCount);
 
         if (selectedPaths) {

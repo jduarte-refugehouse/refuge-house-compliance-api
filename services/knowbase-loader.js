@@ -6,6 +6,8 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const matter = require('gray-matter');
+const { normalizeAccess } = require('../utils/access');
 
 // Parse owner/repo from the repo URL
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
@@ -138,13 +140,29 @@ async function syncKnowbase() {
     const fetchPromises = mdFiles.map(async (file) => {
         try {
             const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
-            const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+            const raw = Buffer.from(blob.content, 'base64').toString('utf-8');
+
+            // Parse optional YAML frontmatter. `access` controls who may view the
+            // document on the human-facing surfaces (default-restrictive = staff,
+            // resolved in normalizeAccess). The frontmatter is stripped from the
+            // served/indexed body so it never appears in rendered docs or chat.
+            let content = raw;
+            let access;
+            try {
+                const parsed = matter(raw);
+                content = parsed.content;
+                access = parsed.data && parsed.data.access;
+            } catch (parseErr) {
+                console.warn(`[KNOWBASE] Frontmatter parse failed for ${file.path}: ${parseErr.message}`);
+                content = raw;
+            }
 
             const topDir = file.path.split('/')[0];
             const category = categorize(topDir, file.path);
 
             _documentCache[file.path] = {
                 content,
+                access: normalizeAccess(access),
                 lastModified: new Date().toISOString(),
                 sizeBytes: Buffer.byteLength(content, 'utf-8'),
                 category
@@ -216,6 +234,8 @@ async function syncKnowbase() {
     for (const [cat, count] of Object.entries(categories)) {
         console.log(`[KNOWBASE]   ${cat}: ${count} documents`);
     }
+    const access = getAccessSummary();
+    console.log(`[KNOWBASE] Access tiers — public: ${access.public}, reviewer: ${access.reviewer}, staff: ${access.staff} (untagged defaults to staff)`);
     if (_manifest) {
         console.log(`[KNOWBASE] Document manifest loaded with ${Object.keys(_manifest).filter(k => k !== '_comment').length} evaluation types`);
     } else {
@@ -544,6 +564,32 @@ function getAllDocuments() {
 }
 
 /**
+ * Get only documents whose access tier is `public`. Used to scope the public
+ * (ungated) chat console so it cannot be used to extract gated content.
+ */
+function getPublicDocuments() {
+    const results = {};
+    for (const [key, value] of Object.entries(_documentCache)) {
+        if (normalizeAccess(value.access) === 'public') {
+            results[key] = value;
+        }
+    }
+    return results;
+}
+
+/**
+ * Count documents per access tier (public/reviewer/staff).
+ */
+function getAccessSummary() {
+    const summary = { public: 0, reviewer: 0, staff: 0 };
+    for (const doc of Object.values(_documentCache)) {
+        const tier = normalizeAccess(doc.access);
+        summary[tier] = (summary[tier] || 0) + 1;
+    }
+    return summary;
+}
+
+/**
  * Get root knowbase README markdown for About rendering.
  */
 function getKnowbaseReadme() {
@@ -651,6 +697,8 @@ module.exports = {
     getDocumentsByPath,
     getDocumentsByCategory,
     getAllDocuments,
+    getPublicDocuments,
+    getAccessSummary,
     getDocumentIndex,
     getKnowbaseReadme,
     getCategorySummary,

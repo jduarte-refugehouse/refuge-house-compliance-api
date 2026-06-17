@@ -451,6 +451,74 @@ If you make `refuge-house-knowbase` private (recommended for production), the co
 
 ---
 
+## Human-Facing Site Auth (Phase 4)
+
+This deployment is **two planes on one origin**:
+
+- **Machine API plane** — `/api/*`, gated by `x-api-key`, stateless. Pulse and other services keep working unchanged; none of the Phase 4 changes touch it.
+- **Human site plane** — `/site-index`, `/public/documents`, `/public/files`, `/review/*`, `/staff`. These are gated per resource by an **access tier**.
+
+The goal is **anti-scraping**, not secrecy: raise the cost of bulk harvesting without standing up identity, email, or a database.
+
+### The three tiers
+
+| Tier | Who gets in | How |
+|------|-------------|-----|
+| `public` | anyone | open |
+| `reviewer` | staff, or anyone holding a current reviewer link | rolling key |
+| `staff` | Refuge House staff only | Entra (Easy Auth) |
+
+Each markdown document declares its tier in YAML frontmatter:
+
+```markdown
+---
+access: public      # or: reviewer / staff
+---
+# Document title
+...
+```
+
+**Anything without a valid `access` value defaults to `staff`** (fail-closed). So a newly added/untagged document is never exposed by accident — you must explicitly open it to `reviewer` or `public`. Binary files (PDF/PNG/DOCX via `/public/files`) have no frontmatter; their tier comes from a directory map in `utils/access.js` (the curated shareable dirs are opened to `reviewer`, everything else is `staff`).
+
+### Reviewer links (rolling key)
+
+A reviewer link is just a URL with a `?key=` that a **staff member sends themselves** — no email service, no per-reviewer records:
+
+- `key(day) = HMAC(REVIEWER_KEY_SECRET, UTC-date)`, truncated to 32 hex chars.
+- A presented key is accepted if it matches any of the last `REVIEWER_KEY_WINDOW_DAYS` daily keys (default 7), so a link works for ~7 days and old keys roll off smoothly.
+- When a reviewer opens `…/review/fy26-sscc?key=ABC`, the key is moved into an httpOnly cookie and the URL is redirected to the clean path (keeps the key out of history/Referer).
+- **Kill switch:** rotate `REVIEWER_KEY_SECRET` to invalidate every outstanding link at once.
+
+Trade-off: this is a shared bearer link, not per-person identity. Anyone it's forwarded to also gets in until it ages out. That's the right call for non-sensitive, anti-scrape gating; the middleware is structured so the key check can later be swapped for per-reviewer tokens without re-architecture.
+
+Staff can grab the current link from the staff-only page **`/staff`** (Entra-gated) and copy it.
+
+### Rollout (safe sequence)
+
+Gating is controlled by `HUMAN_AUTH_MODE` (`off` | `log` | `enforce`). It defaults to `enforce` when `REVIEWER_KEY_SECRET` is set, otherwise `off`. Recommended order:
+
+1. Deploy with `REVIEWER_KEY_SECRET` **unset** (or `HUMAN_AUTH_MODE=off`) — everything stays open.
+2. Tag the documents that should be `public` / `reviewer` in the knowbase (see its README). Everything else will become staff-only.
+3. Enable Easy Auth (below).
+4. Set `HUMAN_AUTH_MODE=log` and watch the logs for `would deny` lines to confirm the right things are gated.
+5. Set `REVIEWER_KEY_SECRET` and `HUMAN_AUTH_MODE=enforce` to turn the gate on.
+
+> Important: because untagged docs default to `staff`, enable Easy Auth **before** enforcing, or staff (and you) will be locked out. Make sure the desk-review portal's referenced policies are tagged `reviewer`, or reviewers with a valid link will still hit a sign-in wall.
+
+### Enable Entra Easy Auth on the App Service
+
+In the Azure Portal, on the `rh-compliance` App Service:
+
+1. **Settings → Authentication → Add identity provider**
+2. Provider: **Microsoft** (Entra ID), app registration: **Create new** (or pick an existing RH-tenant app).
+3. **Restrict access:** choose **Allow unauthenticated access**. This is critical — if you require authentication, Easy Auth will redirect `/api/*` to a browser login and break Pulse. In allow-unauthenticated mode it only attaches an identity (`X-MS-CLIENT-PRINCIPAL-*` headers) when a browser session exists, and our middleware enforces per plane.
+4. Token store: default (on) is fine.
+5. Save. Then add the app settings `REVIEWER_KEY_SECRET` (generate one) and, during rollout, `HUMAN_AUTH_MODE`.
+
+Staff sign-in / sign-out happen at the Easy Auth endpoints `/.auth/login/aad` and `/.auth/logout`; the reviewer-required and staff-required pages link to these automatically.
+
+---
+
 ## Costs
 
 - **Azure App Service B1**: ~$13/month
