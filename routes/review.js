@@ -78,34 +78,51 @@ function initialClassification(item) {
     return 'unmapped';
 }
 
-// Render the download links (chips) for one item's documents. Returns the chip
-// HTML only (no wrapper); empty string when there are no documents.
+// Small inline SVG icons (no external font dependency on the live site).
+const ICON_FILE = '<svg class="doc-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+const ICON_DOWNLOAD = '<svg class="dl-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>';
+
+// Render the asset buttons for one item's documents. Each is a distinct pill
+// with a "view" half (icon + label + type badge) and a "download" half that
+// fetches the file as an attachment. Returns chip HTML only (no wrapper).
 function renderDocChips(item) {
     const docs = Array.isArray(item.documents) ? item.documents : [];
 
     return docs.map((doc) => {
         const label = escapeHtml(doc.label || 'Document');
 
+        let viewHref;
+        let downloadHref;
+        let badge;
+        let kindClass;
+
         // Markdown policy/procedure → rendered document by slug.
         if (doc.kind === 'policy' && doc.slug) {
-            const href = '/public/documents/' + encodeURIComponent(doc.slug);
-            const badge = doc.live
+            const base = '/public/documents/' + encodeURIComponent(doc.slug);
+            viewHref = base;
+            downloadHref = base + '?download=1';
+            kindClass = 'doc-policy';
+            badge = doc.live
                 ? '<span class="doc-badge live" title="Published on the compliance site">live</span>'
                 : '<span class="doc-badge pending" title="In the repo; not yet pushed to main — link resolves after publication">pending</span>';
-            return `<a class="doc" href="${href}" target="_blank" rel="noopener">${label} ${badge}</a>`;
-        }
-
-        // Binary (PDF / reference sheet / etc.) → streamed via /public/files.
-        if (doc.repo) {
-            const href = '/public/files/' + encodeRepoPath(doc.repo);
-            const badge = doc.kind === 'reference-sheet'
+        } else if (doc.repo) {
+            // Binary (PDF / reference sheet / etc.) → streamed via /public/files.
+            const base = '/public/files/' + encodeRepoPath(doc.repo);
+            viewHref = base;
+            downloadHref = base + '?download=1';
+            kindClass = 'doc-file';
+            badge = doc.kind === 'reference-sheet'
                 ? '<span class="doc-badge ref">ref sheet</span>'
                 : '<span class="doc-badge file">PDF</span>';
-            return `<a class="doc" href="${href}" target="_blank" rel="noopener">${label} ${badge}</a>`;
+        } else {
+            // No resolvable target — show the label without a link or download.
+            return `<span class="doc nolink">${ICON_FILE}<span class="doc-label">${label}</span></span>`;
         }
 
-        // No resolvable target — show the label without a link.
-        return `<span class="doc nolink">${label}</span>`;
+        return `<span class="doc ${kindClass}">`
+            + `<a class="doc-view" href="${viewHref}" target="_blank" rel="noopener">${ICON_FILE}<span class="doc-label">${label}</span> ${badge}</a>`
+            + `<a class="doc-dl" href="${downloadHref}" download title="Download ${label}" aria-label="Download ${label}">${ICON_DOWNLOAD}</a>`
+            + `</span>`;
     }).join('');
 }
 
@@ -122,7 +139,8 @@ function renderItem(item) {
     const mapLine = mapText ? `<div class="map-note">${escapeHtml(mapText)}</div>` : '';
 
     const chips = renderDocChips(item);
-    const docsRow = `<div class="docs">${chips || '<span class="docs-empty">No document to provide</span>'}<button type="button" class="note-toggle" title="Add reviewer note">+ note</button></div>`;
+    const docsLabel = chips ? '<span class="docs-label">Assets</span>' : '';
+    const docsRow = `<div class="docs">${docsLabel}${chips || '<span class="docs-empty">No document to provide — N/A</span>'}<button type="button" class="note-toggle" title="Add reviewer note">+ note</button></div>`;
 
     return `<div class="item" data-id="${id}" data-group="${group}" data-status="pending" data-class="${cls}">
   <div class="item-row">
@@ -295,11 +313,19 @@ select.filter{padding:.4rem .5rem;border:1px solid var(--rh-border);border-radiu
 .item[data-class=na] .class-sel{color:var(--na);background:var(--na-bg);border-color:#cbd5e1}
 .item[data-class=unmapped] .class-sel{color:var(--unmapped);background:var(--unmapped-bg);border-color:#d8b4fe}
 .map-note{font-size:.82rem;color:var(--rh-muted);margin-top:.22rem;line-height:1.45}
-.docs{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-top:.45rem}
+.docs{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin-top:.55rem}
+.docs-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--rh-muted);font-weight:700}
 .docs-empty{font-size:.78rem;color:#94a3b8;font-style:italic}
-.doc{display:inline-flex;align-items:center;gap:.3rem;font-size:.76rem;text-decoration:none;background:#fff;border:1px solid var(--rh-border);color:var(--rh-primary);border-radius:8px;padding:.2rem .45rem}
-.doc:hover{background:var(--rh-light-purple);border-color:#d4b5e4}
-.doc.nolink{border-style:dashed;color:var(--rh-muted)}
+.doc{display:inline-flex;align-items:stretch;border:1px solid #c9a8e0;border-radius:8px;overflow:hidden;background:var(--rh-light-purple);box-shadow:0 1px 1px rgba(94,57,137,.08)}
+.doc-view{display:inline-flex;align-items:center;gap:.4rem;padding:.32rem .55rem;font-size:.78rem;font-weight:600;text-decoration:none;color:var(--rh-primary-dark)}
+.doc-view:hover{background:#e7d6f4}
+.doc-ico{width:14px;height:14px;flex:0 0 auto;opacity:.7}
+.doc-label{white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+.doc-dl{display:inline-flex;align-items:center;padding:.32rem .48rem;border-left:1px solid #c9a8e0;color:var(--rh-primary);text-decoration:none;background:rgba(255,255,255,.55)}
+.doc-dl:hover{background:#e7d6f4}
+.dl-ico{width:15px;height:15px}
+.doc.nolink{display:inline-flex;align-items:center;gap:.35rem;padding:.32rem .55rem;background:#fff;border-style:dashed;border-color:var(--rh-border);color:var(--rh-muted);font-size:.78rem}
+.doc.nolink .doc-ico{opacity:.5}
 .doc-badge{font-size:.6rem;font-weight:700;letter-spacing:.02em;padding:.04rem .32rem;border-radius:999px}
 .doc-badge.live{background:var(--new-bg);color:var(--new)}
 .doc-badge.pending{background:var(--rh-warn-bg);color:#9a3412}

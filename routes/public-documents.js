@@ -480,8 +480,16 @@ router.get('/:slug', (req, res) => {
         });
     }
 
-    if (format === 'markdown') {
+    // ?download=1 forces the markdown to download as a file (attachment), so
+    // reviewers can collect the source doc to hand off. ?format=markdown alone
+    // still returns it inline.
+    const wantsDownload = req.query.download === '1' || req.query.download === 'true';
+    if (format === 'markdown' || wantsDownload) {
         res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        if (wantsDownload) {
+            const fname = String(slug).replace(/[^a-z0-9._-]+/gi, '-') + '.md';
+            res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+        }
         return res.send(doc.content);
     }
 
