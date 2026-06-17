@@ -345,6 +345,20 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         @media (max-width: 700px) {
             .container { padding: 1.2rem 1rem; margin: 0.7rem; }
         }
+        /* Section pager (progressive enhancement — injected by the script below) */
+        .doc-pager { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin: 0 0 1.3rem; padding: 0.55rem 0.7rem; background: var(--rh-light-purple); border: 1px solid #d4b5e4; border-radius: 10px; }
+        .doc-pager.bottom { margin: 1.5rem 0 0; }
+        .doc-pager button { background: var(--rh-primary); color: #fff; border: none; border-radius: 8px; padding: 0.4rem 0.8rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+        .doc-pager button:hover { background: var(--rh-primary-dark); }
+        .doc-pager button:disabled { opacity: 0.4; cursor: default; }
+        .doc-pager select { flex: 1 1 200px; min-width: 160px; max-width: 460px; padding: 0.4rem 0.5rem; border: 1px solid var(--rh-border); border-radius: 8px; font-size: 0.85rem; background: #fff; color: var(--rh-text); }
+        .doc-pager .pos { font-size: 0.82rem; color: var(--rh-muted); font-weight: 600; white-space: nowrap; }
+        .doc-page { scroll-margin-top: 1rem; }
+        .doc-page[hidden] { display: none; }
+        @media print {
+            .doc-pager { display: none !important; }
+            .doc-page, .doc-page[hidden] { display: block !important; }
+        }
     </style>
 </head>
 <body>
@@ -367,6 +381,132 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
     <div class="footer">
         &copy; ${year} Refuge House, Inc. &middot; This is a controlled document. Always refer to the current version.
     </div>
+    <script>
+    /* Lightweight section pager: splits a long document into pages by heading
+       (H1 if there are several, otherwise H2), gives Prev/Next + a jump-to
+       dropdown, assigns slug ids to headings (which also makes deep links like
+       #drug-testing-and-substance-abuse-policy resolve), routes in-page anchor
+       links through the pager, and reveals every section when printing.
+       Progressive enhancement: with JS off, the full document still renders. */
+    (function () {
+        var content = document.querySelector('.content');
+        if (!content) return;
+
+        var children = Array.prototype.slice.call(content.children);
+        var h1 = children.filter(function (n) { return n.tagName === 'H1'; }).length;
+        var h2 = children.filter(function (n) { return n.tagName === 'H2'; }).length;
+        var splitTag = h1 > 1 ? 'H1' : (h2 >= 2 ? 'H2' : null);
+        if (!splitTag) return; // short or flat document — leave as one page
+
+        function slugify(t) {
+            return String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        }
+        var usedIds = {};
+        function ensureId(el) {
+            if (el.id) { usedIds[el.id] = true; return; }
+            var base = slugify(el.textContent) || 'section';
+            var id = base, n = 2;
+            while (usedIds[id]) { id = base + '-' + n; n++; }
+            usedIds[id] = true; el.id = id;
+        }
+
+        var pages = [];
+        var current = null;
+        children.forEach(function (node) {
+            if (/^H[1-6]$/.test(node.tagName)) ensureId(node);
+            if (node.tagName === splitTag || !current) {
+                current = document.createElement('section');
+                current.className = 'doc-page';
+                current.dataset.title = /^H[1-6]$/.test(node.tagName) ? node.textContent : 'Introduction';
+                pages.push(current);
+            }
+            current.appendChild(node);
+        });
+        if (pages.length < 2) {
+            pages.forEach(function (p) { while (p.firstChild) content.appendChild(p.firstChild); });
+            return;
+        }
+        pages.forEach(function (p) { content.appendChild(p); });
+
+        var idx = 0;
+        var bars = [];
+        function sync() {
+            bars.forEach(function (bar) {
+                bar.prev.disabled = idx === 0;
+                bar.next.disabled = idx === pages.length - 1;
+                bar.sel.value = idx;
+                bar.pos.textContent = (idx + 1) + ' / ' + pages.length;
+            });
+        }
+        function show(i, toTop) {
+            if (i < 0 || i >= pages.length) return;
+            idx = i;
+            pages.forEach(function (p, k) { p.hidden = k !== idx; });
+            sync();
+            if (toTop) window.scrollTo(0, 0);
+        }
+        function pageIndexOf(id) {
+            var el = id ? document.getElementById(id) : null;
+            if (!el) return -1;
+            for (var i = 0; i < pages.length; i++) { if (pages[i].contains(el)) return i; }
+            return -1;
+        }
+        function jumpToId(id, push) {
+            var i = pageIndexOf(id);
+            if (i < 0) return false;
+            show(i, false);
+            var el = document.getElementById(id);
+            if (el && el.scrollIntoView) el.scrollIntoView();
+            if (push && history.replaceState) history.replaceState(null, '', '#' + id);
+            return true;
+        }
+
+        function buildPager(position) {
+            var bar = document.createElement('div');
+            bar.className = 'doc-pager' + (position === 'bottom' ? ' bottom' : '');
+            var prev = document.createElement('button'); prev.type = 'button'; prev.textContent = '\u2190 Prev'; prev.setAttribute('aria-label', 'Previous section');
+            var next = document.createElement('button'); next.type = 'button'; next.textContent = 'Next \u2192'; next.setAttribute('aria-label', 'Next section');
+            var sel = document.createElement('select'); sel.setAttribute('aria-label', 'Jump to section');
+            pages.forEach(function (p, i) {
+                var o = document.createElement('option');
+                o.value = i; o.textContent = (i + 1) + '. ' + (p.dataset.title || ('Section ' + (i + 1)));
+                sel.appendChild(o);
+            });
+            var pos = document.createElement('span'); pos.className = 'pos';
+            prev.addEventListener('click', function () { show(idx - 1, true); });
+            next.addEventListener('click', function () { show(idx + 1, true); });
+            sel.addEventListener('change', function () { show(parseInt(sel.value, 10), true); });
+            bar.appendChild(prev); bar.appendChild(sel); bar.appendChild(next); bar.appendChild(pos);
+            bars.push({ prev: prev, next: next, sel: sel, pos: pos });
+            return bar;
+        }
+
+        content.parentNode.insertBefore(buildPager('top'), content);
+        content.parentNode.insertBefore(buildPager('bottom'), content.nextSibling);
+
+        content.addEventListener('click', function (e) {
+            var a = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+            if (!a) return;
+            var id = decodeURIComponent(a.getAttribute('href').slice(1));
+            if (id && pageIndexOf(id) >= 0) { e.preventDefault(); jumpToId(id, true); }
+        });
+        window.addEventListener('hashchange', function () {
+            jumpToId(decodeURIComponent((location.hash || '').replace(/^#/, '')), false);
+        });
+
+        var restore = [];
+        window.addEventListener('beforeprint', function () {
+            restore = pages.map(function (p) { return p.hidden; });
+            pages.forEach(function (p) { p.hidden = false; });
+        });
+        window.addEventListener('afterprint', function () {
+            pages.forEach(function (p, k) { p.hidden = restore[k]; });
+        });
+
+        var hashId = decodeURIComponent((location.hash || '').replace(/^#/, ''));
+        if (!(hashId && jumpToId(hashId, false))) show(0, false);
+    })();
+    </script>
 </body>
 </html>`;
 }
