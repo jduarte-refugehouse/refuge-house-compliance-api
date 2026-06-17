@@ -16,8 +16,7 @@
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "marked": "^17.0.5",
-    "mssql": "^10.0.1",
-    "pdfkit": "^0.19.1"
+    "mssql": "^10.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

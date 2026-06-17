@@ -96,11 +96,14 @@ function renderDocChips(item) {
         let badge;
         let kindClass;
 
-        // Markdown policy/procedure → rendered document by slug.
+        // Markdown policy/procedure → view as rendered HTML by slug; download the
+        // canonical PDF (cookbook-generated, in the knowbase) when available,
+        // else fall back to the markdown download.
         if (doc.kind === 'policy' && doc.slug) {
-            const base = '/public/documents/' + encodeURIComponent(doc.slug);
-            viewHref = base;
-            downloadHref = base + '?download=1';
+            viewHref = '/public/documents/' + encodeURIComponent(doc.slug);
+            downloadHref = doc.pdf
+                ? '/public/files/' + encodeRepoPath(doc.pdf) + '?download=1'
+                : viewHref + '?download=1';
             kindClass = 'doc-policy';
             badge = doc.live
                 ? '<span class="doc-badge live" title="Published on the compliance site">live</span>'
