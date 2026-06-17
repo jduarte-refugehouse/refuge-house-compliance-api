@@ -228,11 +228,44 @@ function rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs) {
 }
 
 /**
+ * GFM tables can't hold block-level lists, so authors often write numbered
+ * steps inline inside a cell ("1. ... 2. ... 3. ..."), which renders as a
+ * run-on paragraph. Detect that pattern in <td> cells and rewrite it as a
+ * real ordered list so each step starts on its own line. Conservative: only
+ * fires when a cell has both "1." and "2." step markers and contains no
+ * existing block markup, and original step numbers are preserved.
+ */
+function formatNumberedListsInTableCells(html) {
+    return html.replace(/<td([^>]*)>([\s\S]*?)<\/td>/gi, (full, attrs, inner) => {
+        if (/<(?:ol|ul|li|p|br|div)\b/i.test(inner)) return full;
+        if (!/(?:^|\s)1\.\s/.test(inner) || !/(?:^|\s)2\.\s/.test(inner)) return full;
+
+        const m = inner.match(/(^|\s)1\.\s/);
+        const startIdx = m.index + m[1].length;
+        const prefix = inner.slice(0, startIdx).trim();
+        const listText = inner.slice(startIdx);
+
+        const items = [];
+        const re = /(\d+)\.\s+([\s\S]*?)(?=\s+\d+\.\s|$)/g;
+        let step;
+        while ((step = re.exec(listText)) !== null) {
+            const content = step[2].trim();
+            if (content) items.push({ n: step[1], text: content });
+        }
+        if (items.length < 2) return full;
+
+        const ol = `<ol class="cell-steps">${items.map((s) => `<li value="${s.n}">${s.text}</li>`).join('')}</ol>`;
+        return `<td${attrs}>${prefix ? `${prefix} ${ol}` : ol}</td>`;
+    });
+}
+
+/**
  * Render a self-contained, branded HTML page from markdown content.
  */
 function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) {
     const renderedHtml = marked.parse(markdownContent);
-    const htmlBody = rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs || {});
+    let htmlBody = rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs || {});
+    htmlBody = formatNumberedListsInTableCells(htmlBody);
     const year = new Date().getFullYear();
     const modifiedDate = lastModified
         ? new Date(lastModified).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -326,6 +359,8 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         .content table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
         .content th, .content td { border: 1px solid var(--rh-border); padding: 0.5rem 0.72rem; text-align: left; }
         .content th { background: var(--rh-light-purple); font-weight: 620; }
+        .content td ol.cell-steps { margin: 0; padding-left: 1.25rem; }
+        .content td ol.cell-steps li { margin: 0.2rem 0; }
         .content blockquote { border-left: 3px solid var(--rh-accent); margin: 1rem 0; padding: 0.5rem 1rem; background: #faf5ff; }
         .content code { background: #f5f0fa; padding: 0.12rem 0.35rem; border-radius: 3px; font-size: 0.9em; }
         .content pre { background: #f5f0fa; padding: 0.9rem; border-radius: 4px; overflow-x: auto; }
