@@ -78,12 +78,13 @@
       });
     }
 
-    // Clicking the item label toggles the notes field (unless a link was clicked).
-    var label = it.querySelector('.item-text');
-    if (label) {
-      label.addEventListener('click', function (e) {
-        if (e.target.closest('a')) return;
-        it.classList.toggle('show-notes');
+    // "+ note" reveals the reviewer-notes field (separate from the read-only
+    // mapping summary). Focus it when opened.
+    var noteToggle = it.querySelector('.note-toggle');
+    if (noteToggle) {
+      noteToggle.addEventListener('click', function () {
+        var open = it.classList.toggle('show-notes');
+        if (open && ta) ta.focus();
       });
     }
   });

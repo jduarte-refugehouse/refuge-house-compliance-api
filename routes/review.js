@@ -68,39 +68,35 @@ function initialClassification(item) {
     return 'unmapped';
 }
 
-// Render the download links for one item's documents.
-function renderDocs(item) {
+// Render the download links (chips) for one item's documents. Returns the chip
+// HTML only (no wrapper); empty string when there are no documents.
+function renderDocChips(item) {
     const docs = Array.isArray(item.documents) ? item.documents : [];
-    if (docs.length === 0) {
-        return '<div class="docs empty">No document to provide — see note.</div>';
-    }
 
-    const links = docs.map((doc) => {
+    return docs.map((doc) => {
         const label = escapeHtml(doc.label || 'Document');
 
         // Markdown policy/procedure → rendered document by slug.
         if (doc.kind === 'policy' && doc.slug) {
             const href = '/public/documents/' + encodeURIComponent(doc.slug);
             const badge = doc.live
-                ? '<span class="doc-badge live" title="Published on the compliance site">Live</span>'
-                : '<span class="doc-badge pending" title="In the repo; not yet pushed to main — link resolves after publication">Pending push</span>';
-            return `<a class="doc policy" href="${href}" target="_blank" rel="noopener">${label} ${badge}</a>`;
+                ? '<span class="doc-badge live" title="Published on the compliance site">live</span>'
+                : '<span class="doc-badge pending" title="In the repo; not yet pushed to main — link resolves after publication">pending</span>';
+            return `<a class="doc" href="${href}" target="_blank" rel="noopener">${label} ${badge}</a>`;
         }
 
         // Binary (PDF / reference sheet / etc.) → streamed via /public/files.
         if (doc.repo) {
             const href = '/public/files/' + encodeRepoPath(doc.repo);
-            const kind = doc.kind === 'reference-sheet'
-                ? '<span class="doc-badge ref">Reference sheet</span>'
+            const badge = doc.kind === 'reference-sheet'
+                ? '<span class="doc-badge ref">ref sheet</span>'
                 : '<span class="doc-badge file">PDF</span>';
-            return `<a class="doc file" href="${href}" target="_blank" rel="noopener">${label} ${kind}</a>`;
+            return `<a class="doc" href="${href}" target="_blank" rel="noopener">${label} ${badge}</a>`;
         }
 
         // No resolvable target — show the label without a link.
         return `<span class="doc nolink">${label}</span>`;
-    });
-
-    return `<div class="docs">${links.join('')}</div>`;
+    }).join('');
 }
 
 function renderItem(item) {
@@ -108,32 +104,40 @@ function renderItem(item) {
     const group = groupKeyFor(item);
     const cls = initialClassification(item);
     const label = escapeHtml(item.label || item.item || 'Item');
-    const note = item.note
-        ? `<div class="item-note">${escapeHtml(item.note)}</div>`
-        : '';
+
+    // The mapping summary shown to reviewers: the curated mapping note if there
+    // is one, otherwise the manifest's instructional note. Read-only context —
+    // distinct from the reviewer's own (editable) notes below.
+    const mapText = item.mappingNote || item.note || '';
+    const mapLine = mapText ? `<div class="map-note">${escapeHtml(mapText)}</div>` : '';
+
+    const chips = renderDocChips(item);
+    const docsRow = `<div class="docs">${chips || '<span class="docs-empty">No document to provide</span>'}<button type="button" class="note-toggle" title="Add reviewer note">+ note</button></div>`;
 
     return `<div class="item" data-id="${id}" data-group="${group}" data-status="pending" data-class="${cls}">
-  <div class="item-main">
+  <div class="item-row">
     <div class="status-group" role="group" aria-label="Compliance status">
       <button class="st" data-v="met" title="Met / Compliant">Met</button>
       <button class="st" data-v="notmet" title="Not Met / Deficient">Not Met</button>
       <button class="st" data-v="na" title="Not Applicable">N/A</button>
     </div>
-    <select class="class-sel" title="Policy classification">
-      <option value="legacy">Legacy P&amp;P</option>
-      <option value="transitioning">Transitioning → T3C</option>
-      <option value="new">New (T3C)</option>
-      <option value="na">Not a policy</option>
-      <option value="unmapped">Unmapped</option>
-    </select>
-    <div class="item-text">
-      <span class="item-label">${label}</span>
-      <span class="item-id">${id}</span>
+    <div class="item-body">
+      <div class="item-head">
+        <span class="item-label">${label}</span>
+        <select class="class-sel" title="Policy classification" aria-label="Policy classification">
+          <option value="legacy">Legacy P&amp;P</option>
+          <option value="transitioning">Transitioning → T3C</option>
+          <option value="new">New (T3C)</option>
+          <option value="na">Not a policy</option>
+          <option value="unmapped">Unmapped</option>
+        </select>
+        <span class="item-id">${id}</span>
+      </div>
+      ${mapLine}
+      ${docsRow}
+      <textarea class="notes" rows="2" placeholder="Your review note…"></textarea>
     </div>
   </div>
-  ${renderDocs(item)}
-  ${note}
-  <textarea class="notes" rows="1" placeholder="Reviewer notes…"></textarea>
 </div>`;
 }
 
@@ -214,11 +218,13 @@ a{color:var(--rh-accent)}
 .tile .lab{font-size:.62rem;text-transform:uppercase;color:#7c3aed;font-weight:600;letter-spacing:.03em}
 .tile .val{font-size:1rem;font-weight:700;color:var(--rh-primary-dark)}
 .wrap{max-width:1080px;margin:0 auto;padding:1.1rem 1.5rem 3rem}
-.mig{background:var(--rh-info-bg);border:1.5px solid var(--rh-info-border);border-radius:12px;padding:1rem 1.15rem;margin-bottom:1.1rem}
-.mig h2{margin:0 0 .45rem;font-size:1.02rem;color:var(--rh-primary-dark)}
-.mig p{margin:.35rem 0;font-size:.92rem}
-.key{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.7rem}
-.chip{font-size:.72rem;font-weight:700;padding:.25rem .6rem;border-radius:999px;border:1px solid}
+.legend{background:var(--rh-surface);border:1px solid var(--rh-border);border-radius:10px;padding:.55rem .85rem;margin-bottom:1rem}
+.legend summary{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;cursor:pointer;list-style:none}
+.legend summary::-webkit-details-marker{display:none}
+.legend-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--rh-muted);font-weight:700}
+.legend-more{font-size:.76rem;color:var(--rh-accent);margin-left:auto;text-decoration:underline}
+.legend p{margin:.6rem 0 0;font-size:.84rem;color:var(--rh-muted)}
+.chip{font-size:.7rem;font-weight:700;padding:.18rem .55rem;border-radius:999px;border:1px solid}
 .chip.legacy{background:var(--legacy-bg);color:var(--legacy);border-color:#cbd5e1}
 .chip.transitioning{background:var(--trans-bg);color:var(--trans);border-color:#fdba74}
 .chip.new{background:var(--new-bg);color:var(--new);border-color:#86efac}
@@ -250,37 +256,39 @@ select.filter{padding:.4rem .5rem;border:1px solid var(--rh-border);border-radiu
 .group.collapsed .caret{transform:rotate(-90deg)}
 .group.collapsed .group-body{display:none}
 .group-body{padding:.35rem .6rem .6rem}
-.item{border-bottom:1px solid #f1f5f9;padding:.55rem .35rem}
+.item{border-bottom:1px solid #eef1f5;padding:.6rem .4rem}
 .item:last-child{border-bottom:none}
-.item-main{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.item-row{display:flex;gap:.7rem;align-items:flex-start}
 .status-group{display:flex;border:1px solid var(--rh-border);border-radius:8px;overflow:hidden;flex:0 0 auto}
-.st{background:#fff;border:none;border-right:1px solid var(--rh-border);padding:.3rem .55rem;font-size:.76rem;font-weight:600;cursor:pointer;color:var(--rh-muted)}
+.st{background:#fff;border:none;border-right:1px solid var(--rh-border);padding:.32rem .5rem;font-size:.73rem;font-weight:600;cursor:pointer;color:var(--rh-muted)}
 .st:last-child{border-right:none}
 .st.active[data-v=met]{background:var(--new-bg);color:var(--new)}
 .st.active[data-v=notmet]{background:var(--rh-alert-bg);color:#b91c1c}
 .st.active[data-v=na]{background:var(--na-bg);color:var(--na)}
-.item-text{flex:1;min-width:200px;font-size:.9rem;cursor:pointer}
-.item-label{font-weight:600}
-.item-id{display:inline-block;margin-left:.5rem;font-size:.68rem;color:var(--rh-muted);font-variant:all-small-caps;letter-spacing:.04em}
-.class-sel{font-size:.72rem;border:1px solid var(--rh-border);border-radius:8px;padding:.25rem .35rem;font-weight:600}
-.item[data-class=legacy] .class-sel{color:var(--legacy);background:var(--legacy-bg)}
-.item[data-class=transitioning] .class-sel{color:var(--trans);background:var(--trans-bg)}
-.item[data-class=new] .class-sel{color:var(--new);background:var(--new-bg)}
-.item[data-class=na] .class-sel{color:var(--na);background:var(--na-bg)}
-.item[data-class=unmapped] .class-sel{color:var(--unmapped);background:var(--unmapped-bg)}
-.docs{display:flex;flex-wrap:wrap;gap:.4rem;margin:.45rem 0 0 0}
-.docs.empty{font-size:.8rem;color:var(--rh-muted);font-style:italic}
-.doc{display:inline-flex;align-items:center;gap:.35rem;font-size:.8rem;text-decoration:none;
-  background:#fff;border:1px solid var(--rh-primary);color:var(--rh-primary);border-radius:8px;padding:.28rem .55rem}
-.doc:hover{background:var(--unmapped-bg)}
-.doc.nolink{border-style:dashed;color:var(--rh-muted);border-color:var(--rh-border)}
-.doc-badge{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;padding:.08rem .35rem;border-radius:999px;border:1px solid}
-.doc-badge.live{background:var(--new-bg);color:var(--new);border-color:#86efac}
-.doc-badge.pending{background:var(--rh-warn-bg);color:#9a3412;border-color:#fdba74}
-.doc-badge.file{background:#eef2ff;color:#3730a3;border-color:#c7d2fe}
-.doc-badge.ref{background:var(--unmapped-bg);color:var(--unmapped);border-color:#d8b4fe}
-.item-note{margin-top:.4rem;font-size:.8rem;color:var(--rh-muted);font-style:italic}
-.notes{width:100%;margin-top:.4rem;border:1px solid var(--rh-border);border-radius:8px;padding:.35rem .5rem;font-size:.82rem;font-family:inherit;resize:vertical;display:none}
+.item-body{flex:1;min-width:0}
+.item-head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.item-label{font-weight:600;font-size:.92rem}
+.item-id{font-size:.62rem;color:#94a3b8;font-variant:all-small-caps;letter-spacing:.04em;margin-left:auto}
+.class-sel{font-size:.7rem;border:1px solid var(--rh-border);border-radius:999px;padding:.14rem .5rem;font-weight:700;cursor:pointer}
+.item[data-class=legacy] .class-sel{color:var(--legacy);background:var(--legacy-bg);border-color:#cbd5e1}
+.item[data-class=transitioning] .class-sel{color:var(--trans);background:var(--trans-bg);border-color:#fdba74}
+.item[data-class=new] .class-sel{color:var(--new);background:var(--new-bg);border-color:#86efac}
+.item[data-class=na] .class-sel{color:var(--na);background:var(--na-bg);border-color:#cbd5e1}
+.item[data-class=unmapped] .class-sel{color:var(--unmapped);background:var(--unmapped-bg);border-color:#d8b4fe}
+.map-note{font-size:.82rem;color:var(--rh-muted);margin-top:.22rem;line-height:1.45}
+.docs{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-top:.45rem}
+.docs-empty{font-size:.78rem;color:#94a3b8;font-style:italic}
+.doc{display:inline-flex;align-items:center;gap:.3rem;font-size:.76rem;text-decoration:none;background:#fff;border:1px solid var(--rh-border);color:var(--rh-primary);border-radius:8px;padding:.2rem .45rem}
+.doc:hover{background:var(--rh-light-purple);border-color:#d4b5e4}
+.doc.nolink{border-style:dashed;color:var(--rh-muted)}
+.doc-badge{font-size:.6rem;font-weight:700;letter-spacing:.02em;padding:.04rem .32rem;border-radius:999px}
+.doc-badge.live{background:var(--new-bg);color:var(--new)}
+.doc-badge.pending{background:var(--rh-warn-bg);color:#9a3412}
+.doc-badge.file{background:#eef2ff;color:#3730a3}
+.doc-badge.ref{background:var(--unmapped-bg);color:var(--unmapped)}
+.note-toggle{background:none;border:none;color:var(--rh-muted);font-size:.74rem;cursor:pointer;padding:.2rem .35rem;font-weight:600;white-space:nowrap}
+.note-toggle:hover{color:var(--rh-primary)}
+.notes{width:100%;margin-top:.4rem;border:1px solid var(--rh-border);border-radius:8px;padding:.4rem .55rem;font-size:.82rem;font-family:inherit;resize:vertical;display:none}
 .item.has-notes .notes,.item.show-notes .notes{display:block}
 .item.dim{display:none}
 body.archived .toolbar .btn:not(.export):not(.print){display:none}
@@ -325,18 +333,18 @@ footer.note{max-width:1080px;margin:0 auto;padding:0 1.5rem 2.5rem;color:var(--r
 <div class="wrap">
   <div class="arch-banner" id="archBanner"></div>
 
-  <div class="mig">
-    <h2>Transitioning vs. Legacy Policies &amp; Procedures</h2>
-    <p>Refuge House is migrating its policies and procedures into the <strong>T3C</strong> framework. As that work proceeds, individual P&amp;Ps move through states — so this review distinguishes what a reviewer is looking at. Set the classification per item as you map it:</p>
-    <div class="key">
-      <span class="chip legacy">Legacy P&amp;P</span>
+  <details class="legend">
+    <summary>
+      <span class="legend-label">Classification</span>
+      <span class="chip legacy">Legacy</span>
       <span class="chip transitioning">Transitioning → T3C</span>
       <span class="chip new">New (T3C)</span>
       <span class="chip na">Not a policy</span>
       <span class="chip unmapped">Unmapped</span>
-    </div>
-    <p style="font-size:.84rem;margin-top:.6rem"><strong>Legacy</strong> = the pre-T3C document currently in force. <strong>Transitioning</strong> = actively being rewritten/migrated into T3C. <strong>New (T3C)</strong> = the published T3C version. <strong>Not a policy</strong> = an operational check (e.g., staff ratios, abeyance-list reviews). <strong>Unmapped</strong> = classification still to be assigned in the mapping pass.</p>
-  </div>
+      <span class="legend-more">what these mean</span>
+    </summary>
+    <p>Refuge House is migrating its policies into the <strong>T3C</strong> framework, so each item is tagged by state. <strong>Legacy</strong> = the pre-T3C document currently in force. <strong>Transitioning</strong> = actively being rewritten into T3C. <strong>New (T3C)</strong> = the published T3C version. <strong>Not a policy</strong> = an operational check (e.g., staff ratios, abeyance-list reviews). <strong>Unmapped</strong> = classification still to be assigned. Change any item's tag with its dropdown.</p>
+  </details>
 
   ${pushBanner}
 
@@ -418,4 +426,4 @@ router.get('/fy26-sscc', async (req, res) => {
 });
 
 module.exports = router;
-module.exports._internal = { encodeRepoPath, groupKeyFor, initialClassification, renderDocs, renderPage };
+module.exports._internal = { encodeRepoPath, groupKeyFor, initialClassification, renderDocChips, renderPage };
