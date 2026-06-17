@@ -158,8 +158,10 @@ function renderItem(item) {
     const mapLine = mapText ? `<div class="map-note">${escapeHtml(mapText)}</div>` : '';
 
     const chips = renderDocChips(item);
-    const docsLabel = chips ? '<span class="docs-label">Assets</span>' : '';
-    const docsRow = `<div class="docs">${docsLabel}${chips || '<span class="docs-empty">No document to provide — N/A</span>'}<button type="button" class="note-toggle" title="Add reviewer note">+ note</button></div>`;
+    const assetsCol = `<div class="item-assets">
+      <span class="docs-label">Assets</span>
+      <div class="docs">${chips || '<span class="docs-empty">None — N/A</span>'}</div>
+    </div>`;
 
     return `<div class="item" data-id="${id}" data-group="${group}" data-status="pending" data-class="${cls}">
   <div class="item-row">
@@ -181,9 +183,10 @@ function renderItem(item) {
         <span class="item-id">${id}</span>
       </div>
       ${mapLine}
-      ${docsRow}
+      <button type="button" class="note-toggle" title="Add reviewer note">+ note</button>
       <textarea class="notes" rows="2" placeholder="Your review note…"></textarea>
     </div>
+    ${assetsCol}
   </div>
 </div>`;
 }
@@ -314,7 +317,12 @@ select.filter{padding:.4rem .5rem;border:1px solid var(--rh-border);border-radiu
 .group-body{padding:.35rem .6rem .6rem}
 .item{border-bottom:1px solid #eef1f5;padding:.6rem .4rem}
 .item:last-child{border-bottom:none}
-.item-row{display:flex;gap:.7rem;align-items:flex-start}
+.item-row{display:flex;gap:1rem;align-items:flex-start}
+.item-assets{flex:0 0 300px;display:flex;flex-direction:column;gap:.35rem;border-left:1px solid #eef1f5;padding-left:.9rem}
+@media (max-width:820px){
+  .item-row{flex-wrap:wrap}
+  .item-assets{flex:1 1 100%;border-left:none;border-top:1px solid #eef1f5;padding-left:0;padding-top:.5rem;margin-top:.2rem}
+}
 .status-group{display:flex;border:1px solid var(--rh-border);border-radius:8px;overflow:hidden;flex:0 0 auto}
 .st{background:#fff;border:none;border-right:1px solid var(--rh-border);padding:.32rem .5rem;font-size:.73rem;font-weight:600;cursor:pointer;color:var(--rh-muted)}
 .st:last-child{border-right:none}
@@ -332,14 +340,15 @@ select.filter{padding:.4rem .5rem;border:1px solid var(--rh-border);border-radiu
 .item[data-class=na] .class-sel{color:var(--na);background:var(--na-bg);border-color:#cbd5e1}
 .item[data-class=unmapped] .class-sel{color:var(--unmapped);background:var(--unmapped-bg);border-color:#d8b4fe}
 .map-note{font-size:.82rem;color:var(--rh-muted);margin-top:.22rem;line-height:1.45}
-.docs{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin-top:.55rem}
+.docs{display:flex;flex-direction:column;gap:.4rem;align-items:stretch}
 .docs-label{font-size:.62rem;text-transform:uppercase;letter-spacing:.05em;color:var(--rh-muted);font-weight:700}
 .docs-empty{font-size:.78rem;color:#94a3b8;font-style:italic}
+.item-assets .doc{max-width:100%}
 .doc{display:inline-flex;align-items:stretch;border:1px solid #c9a8e0;border-radius:8px;overflow:hidden;background:var(--rh-light-purple);box-shadow:0 1px 1px rgba(94,57,137,.08)}
 .doc-view{display:inline-flex;align-items:center;gap:.4rem;padding:.32rem .55rem;font-size:.78rem;font-weight:600;text-decoration:none;color:var(--rh-primary-dark)}
 .doc-view:hover{background:#e7d6f4}
 .doc-ico{width:14px;height:14px;flex:0 0 auto;opacity:.7}
-.doc-label{white-space:nowrap;max-width:340px;overflow:hidden;text-overflow:ellipsis}
+.doc-label{white-space:normal;overflow-wrap:anywhere;line-height:1.3}
 .doc-dl{display:inline-flex;align-items:center;padding:.32rem .48rem;border-left:1px solid #c9a8e0;color:var(--rh-primary);text-decoration:none;background:rgba(255,255,255,.55)}
 .doc-dl:hover{background:#e7d6f4}
 .dl-ico{width:15px;height:15px}
@@ -352,7 +361,7 @@ select.filter{padding:.4rem .5rem;border:1px solid var(--rh-border);border-radiu
 .doc-badge.ref{background:var(--unmapped-bg);color:var(--unmapped)}
 .doc-badge.link{background:#e0e7ff;color:#3730a3}
 .doc-link .doc-view{padding-right:.55rem}
-.note-toggle{background:none;border:none;color:var(--rh-muted);font-size:.74rem;cursor:pointer;padding:.2rem .35rem;font-weight:600;white-space:nowrap}
+.note-toggle{display:inline-block;background:none;border:none;color:var(--rh-muted);font-size:.74rem;cursor:pointer;padding:.2rem 0;margin-top:.3rem;font-weight:600;white-space:nowrap}
 .note-toggle:hover{color:var(--rh-primary)}
 .notes{width:100%;margin-top:.4rem;border:1px solid var(--rh-border);border-radius:8px;padding:.4rem .55rem;font-size:.82rem;font-family:inherit;resize:vertical;display:none}
 .item.has-notes .notes,.item.show-notes .notes{display:block}
