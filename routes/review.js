@@ -81,6 +81,7 @@ function initialClassification(item) {
 // Small inline SVG icons (no external font dependency on the live site).
 const ICON_FILE = '<svg class="doc-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
 const ICON_DOWNLOAD = '<svg class="dl-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></svg>';
+const ICON_LINK = '<svg class="doc-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>';
 
 // Render the asset buttons for one item's documents. Each is a distinct pill
 // with a "view" half (icon + label + type badge) and a "download" half that
@@ -91,6 +92,14 @@ function renderDocChips(item) {
     return docs.map((doc) => {
         const label = escapeHtml(doc.label || 'Document');
 
+        // kind:"link" (or any doc with only a url) → render the url as-is, a
+        // view-only chip (a hyperlink has nothing to "download").
+        if ((doc.kind === 'link' || !doc.slug && !doc.repo) && doc.url) {
+            return `<span class="doc doc-link">`
+                + `<a class="doc-view" href="${escapeHtml(doc.url)}" target="_blank" rel="noopener">${ICON_LINK}<span class="doc-label">${label}</span> <span class="doc-badge link">link</span></a>`
+                + `</span>`;
+        }
+
         let viewHref;
         let downloadHref;
         let badge;
@@ -100,10 +109,17 @@ function renderDocChips(item) {
         // canonical PDF (cookbook-generated, in the knowbase) when available,
         // else fall back to the markdown download.
         if (doc.kind === 'policy' && doc.slug) {
-            viewHref = '/public/documents/' + encodeURIComponent(doc.slug);
+            // A slug may carry a #fragment (deep link to a section, e.g.
+            // "personnel-manual-and-hr-handbook#drug-testing..."). Keep the
+            // fragment unencoded so the anchor resolves in the browser.
+            const hashAt = doc.slug.indexOf('#');
+            const slugPart = hashAt >= 0 ? doc.slug.slice(0, hashAt) : doc.slug;
+            const frag = hashAt >= 0 ? doc.slug.slice(hashAt) : '';
+            const base = '/public/documents/' + encodeURIComponent(slugPart);
+            viewHref = base + frag;
             downloadHref = doc.pdf
                 ? '/public/files/' + encodeRepoPath(doc.pdf) + '?download=1'
-                : viewHref + '?download=1';
+                : base + '?download=1';
             kindClass = 'doc-policy';
             badge = doc.live
                 ? '<span class="doc-badge live" title="Published on the compliance site">live</span>'
@@ -334,6 +350,8 @@ select.filter{padding:.4rem .5rem;border:1px solid var(--rh-border);border-radiu
 .doc-badge.pending{background:var(--rh-warn-bg);color:#9a3412}
 .doc-badge.file{background:#eef2ff;color:#3730a3}
 .doc-badge.ref{background:var(--unmapped-bg);color:var(--unmapped)}
+.doc-badge.link{background:#e0e7ff;color:#3730a3}
+.doc-link .doc-view{padding-right:.55rem}
 .note-toggle{background:none;border:none;color:var(--rh-muted);font-size:.74rem;cursor:pointer;padding:.2rem .35rem;font-weight:600;white-space:nowrap}
 .note-toggle:hover{color:var(--rh-primary)}
 .notes{width:100%;margin-top:.4rem;border:1px solid var(--rh-border);border-radius:8px;padding:.4rem .55rem;font-size:.82rem;font-family:inherit;resize:vertical;display:none}
