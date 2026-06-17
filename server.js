@@ -87,9 +87,11 @@ const documentsRoutes = require('./routes/documents');
 // Public routes (no authentication required)
 const pagesRoutes = require('./routes/pages');
 const siteIndexRoutes = require('./routes/site-index');
+const manualRoutes = require('./routes/manual');
 const reviewRoutes = require('./routes/review');
 app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc. (public)
 app.use('/review', requireTier('reviewer'), reviewRoutes); // Desk-review portals — reviewer tier (key or staff)
+app.use('/manual', manualRoutes); // Policies & Procedures workspace (public; per-doc access filtered)
 app.use('/', siteIndexRoutes);    // Site Index — listing filtered per caller tier
 app.use('/console/chat', publicConsoleProtection, consoleAudience, chatRoutes); // Public console chat (audience-scoped)
 app.use('/', healthRoutes);

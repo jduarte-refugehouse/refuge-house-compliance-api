@@ -123,6 +123,13 @@
         .input-area button:disabled { background: #b79ed1; cursor: not-allowed; }
         .meta { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
         .info { margin-top: 12px; font-size: 0.8rem; color: var(--rh-muted); }
+        .app-shell { display: grid; grid-template-columns: 240px 1fr; align-items: start; }
+        .rh-side { position: sticky; top: 0; height: 100vh; overflow: auto; border-right: 1px solid var(--rh-border); background: var(--rh-surface); padding: 1rem 0.8rem; }
+        .rh-side h4 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--rh-muted); margin: 0.6rem 0.3rem 0.4rem; }
+        .rh-side a.side-link { display: flex; justify-content: space-between; gap: 0.4rem; padding: 0.5rem 0.6rem; border-radius: 8px; font-size: 0.9rem; color: var(--rh-text); text-decoration: none; }
+        .rh-side a.side-link:hover, .rh-side a.side-link.primary { background: var(--rh-light-purple); color: var(--rh-primary-dark); }
+        .rh-side a.side-link.primary { font-weight: 700; border: 1px solid #d4b5e4; }
+        @media (max-width: 820px) { .app-shell { grid-template-columns: 1fr; } .rh-side { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rh-border); } }
     </style>
 </head>
 <body>
@@ -133,12 +140,16 @@
         </div>
     </header>
 
+    <div class="app-shell">
+    <aside class="rh-side">
+        <h4>Workspaces</h4>
+        <a class="side-link primary" href="/manual">Policies &amp; Procedures</a>
+        <a class="side-link" href="/site-index">Full Site Index</a>
+        <a class="side-link" href="/review/fy26-sscc">FY-26 Desk Review</a>
+        <h4>Reference</h4>
+        <a class="side-link" href="/public/documents/about" target="_blank" rel="noopener">About</a>
+    </aside>
     <div class="container">
-        <div class="quick-links">
-            <a href="/site-index">Site Index</a>
-            <a href="/public/documents/about" target="_blank" rel="noopener">About</a>
-        </div>
-
         <div class="status-bar">
             <div class="status-dot" id="statusDot"></div>
             <span class="status-text" id="statusText">Checking API status...</span>
@@ -157,6 +168,7 @@
         </div>
 
         <p class="info">This page talks directly to the Compliance API. No API key is needed from this console for testing.</p>
+    </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
