@@ -5,6 +5,7 @@ const express = require('express');
 const { marked } = require('marked');
 const router = express.Router();
 const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
+const { renderMarkdownToPdf } = require('../services/markdown-pdf');
 
 const BRAND = {
     primary: '#5E3989',
@@ -444,9 +445,10 @@ router.get('/about', async (req, res) => {
 
 // GET /public/documents/:slug - Render a document as a branded HTML page
 // Query params:
-//   ?format=json   — return JSON instead of HTML (for app embedding)
-//   ?format=markdown — return raw markdown text
-router.get('/:slug', (req, res) => {
+//   ?format=json     — return JSON instead of HTML (for app embedding)
+//   ?format=markdown — return raw markdown text (inline)
+//   ?download=1      — download as a branded PDF (add &format=markdown for .md)
+router.get('/:slug', async (req, res) => {
     noStore(res);
     const { slug } = req.params;
     const format = req.query.format || 'html';
@@ -480,17 +482,33 @@ router.get('/:slug', (req, res) => {
         });
     }
 
-    // ?download=1 forces the markdown to download as a file (attachment), so
-    // reviewers can collect the source doc to hand off. ?format=markdown alone
-    // still returns it inline.
     const wantsDownload = req.query.download === '1' || req.query.download === 'true';
-    if (format === 'markdown' || wantsDownload) {
+    const safeName = String(slug).replace(/[^a-z0-9._-]+/gi, '-');
+
+    // Raw markdown — inline by default, or as a .md attachment with ?download=1.
+    if (format === 'markdown') {
         res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
         if (wantsDownload) {
-            const fname = String(slug).replace(/[^a-z0-9._-]+/gi, '-') + '.md';
-            res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+            res.setHeader('Content-Disposition', `attachment; filename="${safeName}.md"`);
         }
         return res.send(doc.content);
+    }
+
+    // ?download=1 → branded PDF so reviewers can hand the SSCC a polished file.
+    // Falls back to a markdown attachment if PDF rendering fails.
+    if (wantsDownload) {
+        try {
+            const pdf = await renderMarkdownToPdf(title, doc.content, { sourcePath: docPath });
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${safeName}.pdf"`);
+            res.setHeader('Content-Length', pdf.length);
+            return res.send(pdf);
+        } catch (err) {
+            console.error(`[PUBLIC-DOCS] PDF render failed for ${slug}: ${err.message}`);
+            res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${safeName}.md"`);
+            return res.send(doc.content);
+        }
     }
 
     // Default: render as branded HTML page
