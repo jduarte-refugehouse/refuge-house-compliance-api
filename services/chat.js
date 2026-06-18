@@ -22,8 +22,20 @@ const {
     getDocumentIndex,
     refreshIfStale,
     formatDocumentsAsContext,
-    estimateTokens
+    estimateTokens,
+    isSurfaceable
 } = require('./knowbase-loader');
+
+// Default chat context excludes hidden-lifecycle stubs (listed:false /
+// superseded / retired / deprecated / archived). They stay loaded and directly
+// searchable, but aren't dumped into the assistant's context by default.
+function surfaceableOnly(docs) {
+    const out = {};
+    for (const [docPath, doc] of Object.entries(docs)) {
+        if (isSurfaceable(doc)) out[docPath] = doc;
+    }
+    return out;
+}
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_COMPLIANCE_KEY;
 const CLAUDE_MODEL = process.env.ANTHROPIC_COMPLIANCE_MODEL || 'claude-sonnet-4-5';
@@ -187,7 +199,7 @@ async function chat(message, history = [], options = {}) {
     // Audience scoping: the public console ('public') only sees public-tier docs
     // so it cannot be used to extract gated content; staff/reviewer get 'full'.
     const publicOnly = options.audience === 'public';
-    const allDocs = publicOnly ? getPublicDocuments() : getAllDocuments();
+    const allDocs = surfaceableOnly(publicOnly ? getPublicDocuments() : getAllDocuments());
     const allowedPaths = publicOnly ? new Set(Object.keys(allDocs)) : null;
     const allDocCount = Object.keys(allDocs).length;
     const totalTokens = estimateTokens(allDocs);
@@ -397,7 +409,7 @@ async function* chatStream(message, history = [], options = {}) {
     await refreshIfStale();
 
     const publicOnly = options.audience === 'public';
-    const allDocs = publicOnly ? getPublicDocuments() : getAllDocuments();
+    const allDocs = surfaceableOnly(publicOnly ? getPublicDocuments() : getAllDocuments());
     const allowedPaths = publicOnly ? new Set(Object.keys(allDocs)) : null;
     const allDocCount = Object.keys(allDocs).length;
     const totalTokens = estimateTokens(allDocs);

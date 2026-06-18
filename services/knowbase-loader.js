@@ -42,6 +42,14 @@ let _deskReviewManifest = null;
 const DESK_REVIEW_MANIFEST_PATH =
     'temporary-reference/fy26-sscc-joint-monitoring/desk-review-document-manifest.json';
 
+// Collections registry (collections/collections.json) — the single source of
+// truth for the SET of document collections (manuals/handbooks/compiled sets).
+// Fetched + cached on sync like the desk-review manifest; consumers compile each
+// collection dynamically from this registry + doc frontmatter. No collection set
+// is hardcoded in this repo.
+let _collectionsRegistry = null;
+const COLLECTIONS_REGISTRY_PATH = 'collections/collections.json';
+
 // Persistent index cache — survives restarts, avoids re-indexing unchanged documents
 const INDEX_CACHE_DIR = process.env.INDEX_CACHE_DIR || path.join(__dirname, '..', 'data');
 const INDEX_CACHE_FILE = path.join(INDEX_CACHE_DIR, 'document-index-cache.json');
@@ -51,6 +59,56 @@ const INDEX_CACHE_FILE = path.join(INDEX_CACHE_DIR, 'document-index-cache.json')
  */
 function contentHash(content) {
     return crypto.createHash('sha256').update(content).digest('hex').substring(0, 16);
+}
+
+// Lifecycle status values from doc frontmatter. Anything in HIDDEN_STATUSES is
+// removed from normal surfaces (site index, default chat context, compiled
+// collections) but stays loaded and directly searchable. `legacy` is NOT hidden
+// — legacy carry-forward docs still appear (grouped) until reconciled.
+const HIDDEN_STATUSES = new Set(['superseded', 'retired', 'deprecated', 'archived']);
+
+function normalizeStatus(value) {
+    if (typeof value !== 'string') return null;
+    const v = value.trim().toLowerCase();
+    return v || null;
+}
+
+/**
+ * Normalize a frontmatter `collections` value into [{ code, category?, order? }].
+ * Accepts a bare string, an array of strings, or an array of objects. A bare
+ * string ⇒ { code }.
+ */
+function normalizeCollections(value) {
+    if (!value) return [];
+    const arr = Array.isArray(value) ? value : [value];
+    const out = [];
+    for (const item of arr) {
+        if (typeof item === 'string') {
+            const code = item.trim();
+            if (code) out.push({ code });
+        } else if (item && typeof item === 'object' && item.code != null) {
+            const code = String(item.code).trim();
+            if (!code) continue;
+            const entry = { code };
+            if (item.category != null && String(item.category).trim()) entry.category = String(item.category).trim();
+            if (item.order != null && !Number.isNaN(Number(item.order))) entry.order = Number(item.order);
+            out.push(entry);
+        }
+    }
+    return out;
+}
+
+/**
+ * Surfaceable predicate: a doc is hidden from normal surfaces when it is
+ * explicitly unlisted (`listed: false`) or its lifecycle status is one of the
+ * hidden states. Used by the site index, default chat context, and compiled
+ * collections. Hidden docs remain loaded (and directly searchable).
+ */
+function isSurfaceable(doc) {
+    if (!doc) return false;
+    if (doc.listed === false) return false;
+    if (doc.status && HIDDEN_STATUSES.has(doc.status)) return false;
+    return true;
 }
 
 /**
@@ -150,12 +208,18 @@ async function syncKnowbase() {
             let access;
             let manualGroup = null;
             let frontTitle = null;
+            let status = null;
+            let listed = true;
+            let collections = [];
             try {
                 const parsed = matter(raw);
                 content = parsed.content;
                 access = parsed.data && parsed.data.access;
                 manualGroup = (parsed.data && parsed.data.manualGroup) || null;
                 frontTitle = (parsed.data && parsed.data.title) || null;
+                status = normalizeStatus(parsed.data && parsed.data.status);
+                listed = !(parsed.data && parsed.data.listed === false);
+                collections = normalizeCollections(parsed.data && parsed.data.collections);
             } catch (parseErr) {
                 console.warn(`[KNOWBASE] Frontmatter parse failed for ${file.path}: ${parseErr.message}`);
                 content = raw;
@@ -169,6 +233,9 @@ async function syncKnowbase() {
                 access: normalizeAccess(access),
                 manualGroup,
                 frontTitle,
+                status,
+                listed,
+                collections,
                 lastModified: new Date().toISOString(),
                 sizeBytes: Buffer.byteLength(content, 'utf-8'),
                 category
@@ -232,6 +299,7 @@ async function syncKnowbase() {
     // Load manifest if it exists, and build the document index
     await loadManifest(tree);
     await loadDeskReviewManifest(tree);
+    await loadCollectionsRegistry(tree);
     buildDocumentIndex();
     _lastRefresh = Date.now();
 
@@ -251,6 +319,11 @@ async function syncKnowbase() {
         console.log(`[KNOWBASE] Desk-review manifest loaded with ${_deskReviewManifest.items.length} items`);
     } else {
         console.log(`[KNOWBASE] No desk-review manifest found at ${DESK_REVIEW_MANIFEST_PATH} (/review/fy26-sscc will be unavailable)`);
+    }
+    if (_collectionsRegistry && Array.isArray(_collectionsRegistry.collections)) {
+        console.log(`[KNOWBASE] Collections registry loaded with ${_collectionsRegistry.collections.length} collections`);
+    } else {
+        console.log(`[KNOWBASE] No collections registry found at ${COLLECTIONS_REGISTRY_PATH} (/collections will be empty)`);
     }
 
     // Sync with compliance document registry (Phase 6)
@@ -312,6 +385,35 @@ async function loadDeskReviewManifest(tree) {
  */
 function getDeskReviewManifest() {
     return _deskReviewManifest;
+}
+
+/**
+ * Load the collections registry from the repo tree. Cached in memory and exposed
+ * via getCollectionsRegistry() for the /collections routes.
+ */
+async function loadCollectionsRegistry(tree) {
+    const file = tree.tree.find(
+        (item) => item.type === 'blob' && item.path === COLLECTIONS_REGISTRY_PATH
+    );
+    if (!file) {
+        _collectionsRegistry = null;
+        return;
+    }
+    try {
+        const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
+        const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+        _collectionsRegistry = JSON.parse(content);
+    } catch (err) {
+        console.warn('[KNOWBASE] Failed to parse collections registry:', err.message);
+        _collectionsRegistry = null;
+    }
+}
+
+/**
+ * Get the collections registry (or null if not loaded).
+ */
+function getCollectionsRegistry() {
+    return _collectionsRegistry;
 }
 
 /**
@@ -699,6 +801,9 @@ module.exports = {
     buildDocumentIndex,
     getManifest,
     getDeskReviewManifest,
+    getCollectionsRegistry,
+    isSurfaceable,
+    HIDDEN_STATUSES,
     getDocument,
     getDocumentsByPath,
     getDocumentsByCategory,
