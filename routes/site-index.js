@@ -8,6 +8,7 @@ const cookbook = require('../services/content-cookbook');
 const { applyCookbookBranding } = require('../utils/cookbook-branding');
 const { allows } = require('../middleware/human-auth');
 const { accessForDoc } = require('../utils/access');
+const { isSurfaceable } = require('../services/knowbase-loader');
 
 function pathToSlug(docPath) {
     const basename = String(docPath || '').split('/').pop().replace(/\.md$/i, '');
@@ -34,7 +35,10 @@ async function getIndexData(req) {
         console.warn('[SITE-INDEX] cookbook refresh failed:', err.message);
     }
 
-    const allDocs = Object.entries(getAllDocuments());
+    // Drop non-surfaceable docs (listed:false / superseded / retired / deprecated
+    // / archived) up front — they never appear in the index, but stay loaded and
+    // directly searchable. `legacy` is surfaceable and still listed (grouped).
+    const allDocs = Object.entries(getAllDocuments()).filter(([, doc]) => isSurfaceable(doc));
     const toEntry = ([docPath, doc]) => ({
         path: docPath,
         title: (doc && doc.frontTitle) || docPath.split('/').pop().replace(/\.md$/i, ''),
