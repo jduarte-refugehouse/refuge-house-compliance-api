@@ -129,6 +129,7 @@
         .rh-side a.side-link { display: flex; justify-content: space-between; gap: 0.4rem; padding: 0.5rem 0.6rem; border-radius: 8px; font-size: 0.9rem; color: var(--rh-text); text-decoration: none; }
         .rh-side a.side-link:hover, .rh-side a.side-link.primary { background: var(--rh-light-purple); color: var(--rh-primary-dark); }
         .rh-side a.side-link.primary { font-weight: 700; border: 1px solid #d4b5e4; }
+        .rh-side a.side-link .rh-code { font-size: 0.62rem; font-weight: 700; color: var(--rh-primary); background: var(--rh-light-purple); border: 1px solid #d4b5e4; border-radius: 999px; padding: 0.02rem 0.4rem; }
         @media (max-width: 820px) { .app-shell { grid-template-columns: 1fr; } .rh-side { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rh-border); } }
     </style>
 </head>
@@ -147,6 +148,10 @@
         <a class="side-link" href="/collections">Collections</a>
         <a class="side-link" href="/site-index">Full Site Index</a>
         <a class="side-link" href="/review/fy26-sscc">FY-26 Desk Review</a>
+        <div id="collectionsNav" style="display:none">
+            <h4>Collections</h4>
+            <div id="collectionsLinks"></div>
+        </div>
         <h4>Reference</h4>
         <a class="side-link" href="/public/documents/about" target="_blank" rel="noopener">About</a>
     </aside>
@@ -200,6 +205,36 @@
             }
         }
         checkHealth();
+
+        // Surface each collection in the sidebar, but only for signed-in Entra
+        // (Azure) users. /.auth/me confirms an authenticated principal;
+        // /collections is already access-filtered server-side per caller tier.
+        async function loadCollectionsNav() {
+            try {
+                const me = await fetch('/.auth/me', { credentials: 'same-origin' });
+                if (!me.ok) return;
+                const meData = await me.json().catch(() => null);
+                const principal = Array.isArray(meData) ? meData[0] : (meData && meData.clientPrincipal);
+                if (!principal) return;
+
+                const res = await fetch('/collections?format=json', {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin'
+                });
+                if (!res.ok) return;
+                const data = await res.json();
+                const cols = (data && data.collections) || [];
+                if (!cols.length) return;
+
+                document.getElementById('collectionsLinks').innerHTML = cols.map((c) =>
+                    '<a class="side-link" href="' + encodeURI(c.url) + '">'
+                    + '<span>' + escapeHtml(c.title) + '</span>'
+                    + '<span class="rh-code">' + escapeHtml(c.code) + '</span></a>'
+                ).join('');
+                document.getElementById('collectionsNav').style.display = '';
+            } catch (e) { /* non-fatal: leave the collections section hidden */ }
+        }
+        loadCollectionsNav();
 
         inputEl.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !sendBtn.disabled) sendMessage();
