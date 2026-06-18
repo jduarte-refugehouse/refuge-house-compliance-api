@@ -388,6 +388,8 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         .doc-pager button:disabled { opacity: 0.4; cursor: default; }
         .doc-pager select { flex: 1 1 200px; min-width: 160px; max-width: 460px; padding: 0.4rem 0.5rem; border: 1px solid var(--rh-border); border-radius: 8px; font-size: 0.85rem; background: #fff; color: var(--rh-text); }
         .doc-pager .pos { font-size: 0.82rem; color: var(--rh-muted); font-weight: 600; white-space: nowrap; }
+        .doc-pager .toggle { background: #fff; color: var(--rh-primary); border: 1px solid #d4b5e4; }
+        .doc-pager .toggle:hover { background: #ead8f4; }
         .doc-page { scroll-margin-top: 1rem; }
         .doc-page[hidden] { display: none; }
         @media print {
@@ -465,13 +467,31 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
 
         var idx = 0;
         var bars = [];
+        // View mode: 'paged' (one section at a time) or 'full' (whole document).
+        // The reader's choice is remembered across documents.
+        var mode = 'paged';
+        try { if (localStorage.getItem('rh_doc_view') === 'full') mode = 'full'; } catch (e) {}
+
         function sync() {
+            var full = mode === 'full';
             bars.forEach(function (bar) {
-                bar.prev.disabled = idx === 0;
-                bar.next.disabled = idx === pages.length - 1;
+                bar.prev.disabled = full || idx === 0;
+                bar.next.disabled = full || idx === pages.length - 1;
                 bar.sel.value = idx;
-                bar.pos.textContent = (idx + 1) + ' / ' + pages.length;
+                bar.pos.textContent = full ? ('All ' + pages.length + ' sections') : ((idx + 1) + ' / ' + pages.length);
+                bar.toggle.textContent = full ? 'View by section' : 'View full document';
+                bar.toggle.setAttribute('aria-pressed', full ? 'true' : 'false');
             });
+        }
+        function applyMode() {
+            pages.forEach(function (p, k) { p.hidden = mode === 'full' ? false : (k !== idx); });
+            sync();
+        }
+        function setMode(m, persist) {
+            mode = m;
+            if (persist) { try { localStorage.setItem('rh_doc_view', m); } catch (e) {} }
+            applyMode();
+            if (mode === 'paged') window.scrollTo(0, 0);
         }
         function show(i, toTop) {
             if (i < 0 || i >= pages.length) return;
@@ -479,6 +499,17 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
             pages.forEach(function (p, k) { p.hidden = k !== idx; });
             sync();
             if (toTop) window.scrollTo(0, 0);
+        }
+        // Navigate to a section honoring the current mode: page in 'paged',
+        // scroll to it in 'full'.
+        function goToSection(i, toTop) {
+            if (i < 0 || i >= pages.length) return;
+            if (mode === 'full') {
+                idx = i; sync();
+                if (pages[i].scrollIntoView) pages[i].scrollIntoView({ block: 'start' });
+            } else {
+                show(i, toTop);
+            }
         }
         function pageIndexOf(id) {
             var el = id ? document.getElementById(id) : null;
@@ -489,7 +520,8 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         function jumpToId(id, push) {
             var i = pageIndexOf(id);
             if (i < 0) return false;
-            show(i, false);
+            idx = i;
+            if (mode === 'paged') show(i, false); else sync();
             var el = document.getElementById(id);
             if (el && el.scrollIntoView) el.scrollIntoView();
             if (push && history.replaceState) history.replaceState(null, '', '#' + id);
@@ -508,11 +540,13 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
                 sel.appendChild(o);
             });
             var pos = document.createElement('span'); pos.className = 'pos';
-            prev.addEventListener('click', function () { show(idx - 1, true); });
-            next.addEventListener('click', function () { show(idx + 1, true); });
-            sel.addEventListener('change', function () { show(parseInt(sel.value, 10), true); });
-            bar.appendChild(prev); bar.appendChild(sel); bar.appendChild(next); bar.appendChild(pos);
-            bars.push({ prev: prev, next: next, sel: sel, pos: pos });
+            var toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'toggle';
+            prev.addEventListener('click', function () { goToSection(idx - 1, true); });
+            next.addEventListener('click', function () { goToSection(idx + 1, true); });
+            sel.addEventListener('change', function () { goToSection(parseInt(sel.value, 10), true); });
+            toggle.addEventListener('click', function () { setMode(mode === 'full' ? 'paged' : 'full', true); });
+            bar.appendChild(prev); bar.appendChild(sel); bar.appendChild(next); bar.appendChild(pos); bar.appendChild(toggle);
+            bars.push({ prev: prev, next: next, sel: sel, pos: pos, toggle: toggle });
             return bar;
         }
 
@@ -538,8 +572,9 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
             pages.forEach(function (p, k) { p.hidden = restore[k]; });
         });
 
+        setMode(mode, false);
         var hashId = decodeURIComponent((location.hash || '').replace(/^#/, ''));
-        if (!(hashId && jumpToId(hashId, false))) show(0, false);
+        if (hashId) jumpToId(hashId, false);
     })();
     </script>
 </body>
