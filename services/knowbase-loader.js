@@ -148,10 +148,14 @@ async function syncKnowbase() {
             // served/indexed body so it never appears in rendered docs or chat.
             let content = raw;
             let access;
+            let manualGroup = null;
+            let frontTitle = null;
             try {
                 const parsed = matter(raw);
                 content = parsed.content;
                 access = parsed.data && parsed.data.access;
+                manualGroup = (parsed.data && parsed.data.manualGroup) || null;
+                frontTitle = (parsed.data && parsed.data.title) || null;
             } catch (parseErr) {
                 console.warn(`[KNOWBASE] Frontmatter parse failed for ${file.path}: ${parseErr.message}`);
                 content = raw;
@@ -163,6 +167,8 @@ async function syncKnowbase() {
             _documentCache[file.path] = {
                 content,
                 access: normalizeAccess(access),
+                manualGroup,
+                frontTitle,
                 lastModified: new Date().toISOString(),
                 sizeBytes: Buffer.byteLength(content, 'utf-8'),
                 category

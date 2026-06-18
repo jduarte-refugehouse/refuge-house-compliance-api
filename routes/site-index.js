@@ -37,9 +37,10 @@ async function getIndexData(req) {
     const allDocs = Object.entries(getAllDocuments());
     const toEntry = ([docPath, doc]) => ({
         path: docPath,
-        title: docPath.split('/').pop().replace(/\.md$/i, ''),
+        title: (doc && doc.frontTitle) || docPath.split('/').pop().replace(/\.md$/i, ''),
         slug: pathToSlug(docPath),
         category: doc?.category || null,
+        group: (doc && doc.manualGroup) || null,
         access: accessForDoc(doc)
     });
 
@@ -63,6 +64,17 @@ async function getIndexData(req) {
     // the knowbase loader; surface them here so the index reflects them too.
     const planDocs = allDocs
         .filter(([docPath]) => docPath.startsWith('plans/') && docPath.toLowerCase().endsWith('.md'))
+        .map(toEntry)
+        .filter(visible)
+        .sort((a, b) => a.title.localeCompare(b.title));
+
+    // Convention-driven groups: any synced doc that declares a manualGroup in its
+    // YAML frontmatter is listed here (grouped + access-gated by its own metadata),
+    // unless it's already surfaced by the folder-based groups above. This lets the
+    // knowbase add new doc types/folders with zero changes to this repo.
+    const listedPaths = new Set([...policyProcedureDocs, ...planDocs].map((e) => e.path));
+    const conventionDocs = allDocs
+        .filter(([docPath, doc]) => doc && doc.manualGroup && !listedPaths.has(docPath))
         .map(toEntry)
         .filter(visible)
         .sort((a, b) => a.title.localeCompare(b.title));
@@ -94,6 +106,7 @@ async function getIndexData(req) {
         generatedAt: new Date().toISOString(),
         policyProcedureDocs,
         planDocs,
+        conventionDocs,
         staticResourcesAndGuides: [...staticPages, ...cookbookEntries]
     };
 }
@@ -114,10 +127,12 @@ router.get('/site-index.json', async (req, res) => {
         counts: {
             policyProcedure: data.policyProcedureDocs.length,
             plans: data.planDocs.length,
+            conventionDocs: data.conventionDocs.length,
             staticResourcesAndGuides: data.staticResourcesAndGuides.length
         },
         policyProcedureDocs: data.policyProcedureDocs,
         planDocs: data.planDocs,
+        conventionDocs: data.conventionDocs,
         staticResourcesAndGuides: data.staticResourcesAndGuides
     });
 });
@@ -175,6 +190,21 @@ router.get('/site-index', async (req, res) => {
         })
         .join('');
 
+    // Convention-driven sections: group frontmatter-declared docs by manualGroup.
+    const convGroups = new Map();
+    for (const d of data.conventionDocs) {
+        const g = d.group || 'Other';
+        if (!convGroups.has(g)) convGroups.set(g, []);
+        convGroups.get(g).push(d);
+    }
+    const convSections = [...convGroups.keys()]
+        .sort((a, b) => a.localeCompare(b))
+        .map((g) => {
+            const docs = convGroups.get(g);
+            return renderGroupSection(g, docs.map(renderDocItem).join(''), docs.length);
+        })
+        .join('');
+
     const planRows = data.planDocs.map(renderDocItem).join('');
 
     const resourceRows = data.staticResourcesAndGuides
@@ -186,7 +216,7 @@ router.get('/site-index', async (req, res) => {
         })
         .join('');
 
-    const totalItems = data.policyProcedureDocs.length + data.planDocs.length + data.staticResourcesAndGuides.length;
+    const totalItems = data.policyProcedureDocs.length + data.planDocs.length + data.conventionDocs.length + data.staticResourcesAndGuides.length;
 
     res.type('html').send(`<!doctype html>
 <html lang="en">
@@ -261,12 +291,13 @@ router.get('/site-index', async (req, res) => {
     <div class="searchbar">
       <input type="search" id="idx-search" placeholder="Search policies, procedures, plans, resources…" autocomplete="off" />
     </div>
-    <p class="counts">Generated ${escapeHtml(data.generatedAt)} · Showing <strong id="idx-visible">${totalItems}</strong> of ${totalItems} items · Policies/Procedures: ${data.policyProcedureDocs.length} · Plans: ${data.planDocs.length} · Resources &amp; Guides: ${data.staticResourcesAndGuides.length}</p>
+    <p class="counts">Generated ${escapeHtml(data.generatedAt)} · Showing <strong id="idx-visible">${totalItems}</strong> of ${totalItems} items · Policies/Procedures: ${data.policyProcedureDocs.length} · Plans: ${data.planDocs.length}${data.conventionDocs.length ? ` · Other groups: ${data.conventionDocs.length}` : ''} · Resources &amp; Guides: ${data.staticResourcesAndGuides.length}</p>
     <p class="counts" id="idx-empty">No items match your search.</p>
 
     <div class="grid">
       <div>
         ${docSections}
+        ${convSections}
       </div>
       <div>
         ${renderGroupSection('Plans', planRows, data.planDocs.length)}
