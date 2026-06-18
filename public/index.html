@@ -145,7 +145,6 @@
     <aside class="rh-side">
         <h4>Workspaces</h4>
         <a class="side-link primary" href="/manual">Policies &amp; Procedures</a>
-        <a class="side-link" href="/collections">Collections</a>
         <a class="side-link" href="/site-index">Full Site Index</a>
         <a class="side-link" href="/review/fy26-sscc">FY-26 Desk Review</a>
         <div id="collectionsNav" style="display:none">
@@ -206,17 +205,12 @@
         }
         checkHealth();
 
-        // Surface each collection in the sidebar, but only for signed-in Entra
-        // (Azure) users. /.auth/me confirms an authenticated principal;
-        // /collections is already access-filtered server-side per caller tier.
+        // List each collection directly in the sidebar; clicking one opens that
+        // collection's detail page. /collections is access-filtered server-side
+        // per caller tier, so the caller only ever sees collections they may
+        // view (none -> the whole section stays hidden).
         async function loadCollectionsNav() {
             try {
-                const me = await fetch('/.auth/me', { credentials: 'same-origin' });
-                if (!me.ok) return;
-                const meData = await me.json().catch(() => null);
-                const principal = Array.isArray(meData) ? meData[0] : (meData && meData.clientPrincipal);
-                if (!principal) return;
-
                 const res = await fetch('/collections?format=json', {
                     headers: { Accept: 'application/json' },
                     credentials: 'same-origin'
