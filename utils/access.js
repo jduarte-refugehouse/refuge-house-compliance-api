@@ -32,10 +32,14 @@ function accessForDoc(doc) {
 
 // Binary files (PDF/PNG/DOCX/etc.) streamed via /public/files have no frontmatter
 // to carry a tier. They are already restricted to a curated allowlist of
-// shareable directories (see routes/public-files.js), so we open those
+// shareable directories (see routes/public-files.js), so we open most of those
 // directories to the reviewer tier here and treat anything else as staff-only.
+// Some directories are explicitly staff-only (e.g. governance/ board records).
 // Most-specific prefixes should come first; first match wins.
 const FILE_ACCESS_PREFIXES = [
+    // Governance / board-action records (signed §749.139(b) adoptions, etc.) are
+    // staff-only and must never be served to reviewers or the public.
+    ['governance/', 'staff'],
     ['regulatory-references/', 'reviewer'],
     ['plans/', 'reviewer'],
     ['temporary-reference/', 'reviewer'],

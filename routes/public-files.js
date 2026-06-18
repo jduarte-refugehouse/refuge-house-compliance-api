@@ -28,7 +28,14 @@ const KNOWBASE_REPO = parseRepoUrl(KNOWBASE_REPO_URL);
 // Only these top-level directories and extensions may be served. Top-level dir
 // allowlisting (plus traversal rejection) keeps this scoped to shareable
 // reference material and away from anything else in the repo.
-const ALLOWED_DIRS = ['regulatory-references/', 'plans/', 'temporary-reference/', 'forms/', 'generated-pdf/', 'policies-procedures/', 'personnel-hr/'];
+// `governance/` is allowlisted for serving but is staff-only (see the hard
+// staff gate in the handler and accessForFilePath); the rest are reviewer-tier.
+const ALLOWED_DIRS = ['regulatory-references/', 'plans/', 'temporary-reference/', 'forms/', 'generated-pdf/', 'policies-procedures/', 'personnel-hr/', 'governance/'];
+
+// Directories that require a genuine authenticated staff (Entra) principal and
+// must NEVER be exposed publicly — even when HUMAN_AUTH_MODE is off/log. If the
+// staff-auth path isn't wired (no principal), these simply stay unserved.
+const STAFF_ONLY_DIRS = ['governance/'];
 const ALLOWED_EXTENSIONS = ['.pdf', '.png', '.jpg', '.jpeg', '.docx', '.html'];
 
 const CONTENT_TYPES = {
@@ -158,6 +165,17 @@ router.get(/^\/(.+)/, async (req, res) => {
     // Binaries carry no frontmatter, so their tier comes from the file access map
     // (default-restrictive = staff; curated shareable dirs opened to reviewer).
     const tier = accessForFilePath(resolved.path);
+
+    // Staff-only directories (e.g. governance/ board records) are fail-closed:
+    // they require a real staff (Entra) principal regardless of HUMAN_AUTH_MODE,
+    // so they are never exposed publicly while the gate is in off/log mode, and
+    // stay unserved entirely if staff auth isn't wired (no principal present).
+    if (STAFF_ONLY_DIRS.some((dir) => resolved.path.startsWith(dir))) {
+        if (!req.caller || !req.caller.isStaff) {
+            return deny(req, res, 'staff');
+        }
+    }
+
     if (!allows(req, tier)) {
         return deny(req, res, tier);
     }
