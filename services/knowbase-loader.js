@@ -34,13 +34,24 @@ let _staticPages = {};
 let _rootReadme = null;
 let _lastRefresh = 0;
 let _manifest = null;
-// FY-26 SSCC desk-review manifest (JSON). Drives the /review/fy26-sscc portal.
-// It is JSON (not .md/.html), so the normal document/page loaders skip it — we
-// fetch and cache it explicitly during sync, the same way the AI-retrieval
-// document-manifest.json is loaded.
-let _deskReviewManifest = null;
+// Review manifests (JSON) drive the manifest-rendered desk-review portals at
+// /review/:reviewId. They are JSON (not .md/.html), so the normal document/page
+// loaders skip them — we discover, fetch, and cache them explicitly during sync,
+// the same way the AI-retrieval document-manifest.json is loaded.
+//
+// Discovery convention (knowbase = single source of truth): any blob whose
+// filename ends with "-document-manifest.json" is a review manifest. This
+// excludes the root AI-retrieval "document-manifest.json" (no prefix). Each
+// manifest is keyed by its declared `reviewId`, falling back to a slug derived
+// from its folder. To add a new review, drop a manifest in the knowbase — no
+// code change here. The compliance route is a generic renderer of these.
+let _reviewManifests = {};
+const REVIEW_MANIFEST_SUFFIX = '-document-manifest.json';
+// Legacy single-manifest path + id, retained so getDeskReviewManifest() keeps
+// returning the FY-26 SSCC manifest for existing callers.
 const DESK_REVIEW_MANIFEST_PATH =
     'temporary-reference/fy26-sscc-joint-monitoring/desk-review-document-manifest.json';
+const LEGACY_DESK_REVIEW_ID = 'fy26-sscc';
 
 // Collections registry (collections/collections.json) — the single source of
 // truth for the SET of document collections (manuals/handbooks/compiled sets).
@@ -298,7 +309,7 @@ async function syncKnowbase() {
 
     // Load manifest if it exists, and build the document index
     await loadManifest(tree);
-    await loadDeskReviewManifest(tree);
+    await loadReviewManifests(tree);
     await loadCollectionsRegistry(tree);
     buildDocumentIndex();
     _lastRefresh = Date.now();
@@ -315,10 +326,11 @@ async function syncKnowbase() {
     } else {
         console.log('[KNOWBASE] No document-manifest.json found (chat will use all docs, evaluations will use all docs)');
     }
-    if (_deskReviewManifest && Array.isArray(_deskReviewManifest.items)) {
-        console.log(`[KNOWBASE] Desk-review manifest loaded with ${_deskReviewManifest.items.length} items`);
+    const reviewIds = Object.keys(_reviewManifests);
+    if (reviewIds.length) {
+        console.log(`[KNOWBASE] Loaded ${reviewIds.length} review manifest(s): ${reviewIds.map((id) => `${id} (${(_reviewManifests[id].items || []).length} items)`).join(', ')}`);
     } else {
-        console.log(`[KNOWBASE] No desk-review manifest found at ${DESK_REVIEW_MANIFEST_PATH} (/review/fy26-sscc will be unavailable)`);
+        console.log(`[KNOWBASE] No review manifests found (files ending in ${REVIEW_MANIFEST_SUFFIX}); /review/:reviewId portals will be unavailable`);
     }
     if (_collectionsRegistry && Array.isArray(_collectionsRegistry.collections)) {
         console.log(`[KNOWBASE] Collections registry loaded with ${_collectionsRegistry.collections.length} collections`);
@@ -358,33 +370,76 @@ async function loadManifest(tree) {
     }
 }
 
-/**
- * Load the FY-26 SSCC desk-review manifest from the repo tree. Cached in memory
- * and exposed via getDeskReviewManifest() for the /review/fy26-sscc portal.
- */
-async function loadDeskReviewManifest(tree) {
-    const file = tree.tree.find(
-        (item) => item.type === 'blob' && item.path === DESK_REVIEW_MANIFEST_PATH
-    );
-    if (!file) {
-        _deskReviewManifest = null;
-        return;
+// Derive a stable reviewId for a manifest: its own `reviewId` if declared, else
+// a slug from the containing folder with common suffixes trimmed (so
+// ".../fy26-sscc-joint-monitoring/..." -> "fy26-sscc"). Always lowercased.
+function reviewIdForManifest(filePath, manifest) {
+    if (manifest && typeof manifest.reviewId === 'string' && manifest.reviewId.trim()) {
+        return manifest.reviewId.trim().toLowerCase();
     }
-    try {
-        const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
-        const content = Buffer.from(blob.content, 'base64').toString('utf-8');
-        _deskReviewManifest = JSON.parse(content);
-    } catch (err) {
-        console.warn('[KNOWBASE] Failed to parse desk-review manifest:', err.message);
-        _deskReviewManifest = null;
-    }
+    const parts = String(filePath || '').split('/').filter(Boolean);
+    const folder = parts.length >= 2 ? parts[parts.length - 2] : (parts[0] || 'review');
+    return folder
+        .replace(/-joint-monitoring$|-monitoring$|-desk-review$|-review$/i, '')
+        .toLowerCase();
 }
 
 /**
- * Get the FY-26 SSCC desk-review manifest (or null if not loaded).
+ * Discover, fetch, and cache every review manifest in the repo tree. A review
+ * manifest is any blob whose filename ends with "-document-manifest.json"
+ * (this excludes the root AI-retrieval "document-manifest.json", which has no
+ * prefix). Each is keyed by its reviewId. Cached in memory and exposed via
+ * getReviewManifest()/listReviews() (and getDeskReviewManifest() for the legacy
+ * FY-26 caller).
+ */
+async function loadReviewManifests(tree) {
+    _reviewManifests = {};
+    const files = tree.tree.filter(
+        (item) => item.type === 'blob' &&
+            item.path.toLowerCase().endsWith(REVIEW_MANIFEST_SUFFIX)
+    );
+    await Promise.all(files.map(async (file) => {
+        try {
+            const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
+            const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+            const parsed = JSON.parse(content);
+            const id = reviewIdForManifest(file.path, parsed);
+            // Stamp source path + resolved id so consumers can introspect.
+            parsed._sourcePath = file.path;
+            parsed.reviewId = id;
+            _reviewManifests[id] = parsed;
+        } catch (err) {
+            console.warn(`[KNOWBASE] Failed to parse review manifest ${file.path}: ${err.message}`);
+        }
+    }));
+}
+
+/**
+ * Get a review manifest by id (case-insensitive), or null if not loaded.
+ */
+function getReviewManifest(reviewId) {
+    if (!reviewId) return null;
+    return _reviewManifests[String(reviewId).trim().toLowerCase()] || null;
+}
+
+/**
+ * List available reviews: [{ reviewId, title, itemCount, sourcePath }].
+ */
+function listReviews() {
+    return Object.entries(_reviewManifests).map(([reviewId, m]) => ({
+        reviewId,
+        title: (m && m.title) || reviewId,
+        itemCount: m && Array.isArray(m.items) ? m.items.length : 0,
+        sourcePath: (m && m._sourcePath) || null
+    }));
+}
+
+/**
+ * Get the FY-26 SSCC desk-review manifest (or null). Back-compat shim over the
+ * generalized review-manifest cache.
  */
 function getDeskReviewManifest() {
-    return _deskReviewManifest;
+    return getReviewManifest(LEGACY_DESK_REVIEW_ID);
 }
 
 /**
@@ -801,6 +856,8 @@ module.exports = {
     buildDocumentIndex,
     getManifest,
     getDeskReviewManifest,
+    getReviewManifest,
+    listReviews,
     getCollectionsRegistry,
     isSurfaceable,
     HIDDEN_STATUSES,

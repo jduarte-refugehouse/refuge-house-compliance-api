@@ -1,13 +1,16 @@
-// Client engine for the FY-26 SSCC desk-review portal (/review/fy26-sscc).
+// Shared client engine for manifest-driven desk-review portals (/review/:reviewId).
 // Operates entirely on the server-rendered DOM: hydrates saved state from
 // localStorage, wires Met/Not Met/N·A controls, classification, reviewer notes,
 // progress, filtering, JSON export, print, and "Freeze for archive".
+//
+// The review identity comes from <body data-review-id="…"> so a single asset
+// serves every review; persisted state is namespaced per review id.
 (function () {
   'use strict';
 
+  var REVIEW_ID = (document.body && document.body.dataset && document.body.dataset.reviewId) || 'review';
   // Bump the version suffix if the persisted shape ever changes.
-  var REVIEW_ID = 'fy26-sscc-desk-review';
-  var KEY = 'rh-' + REVIEW_ID + '-v2';
+  var KEY = 'rh-' + REVIEW_ID + '-desk-review-v2';
 
   var state = {};
   try { state = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { state = {}; }
@@ -162,6 +165,7 @@
         var notesEl = it.querySelector('.notes');
         out.items[it.dataset.id] = {
           label: labelEl ? labelEl.textContent.trim() : '',
+          group: it.dataset.group || '',
           status: it.dataset.status,
           classification: it.dataset.class,
           notes: notesEl ? (notesEl.value || '') : ''
@@ -170,7 +174,7 @@
       var blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = REVIEW_ID + '-results.json';
+      a.download = REVIEW_ID + '-desk-review-results.json';
       a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 0);
     });
