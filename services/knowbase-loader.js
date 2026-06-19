@@ -6,6 +6,49 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const yaml = require('js-yaml');
+
+// Documents whose lifecycle status means "dead" — excluded from listings and
+// default retrieval (but still directly link-addressable). Mirrors knowbase
+// CLAUDE.md §9. Note: status:legacy is NOT hidden (legacy docs still list).
+const HIDDEN_STATUSES = new Set(['superseded', 'retired', 'deprecated', 'archived']);
+
+/**
+ * Split YAML frontmatter from a markdown body. The knowbase declares the layer
+ * the API consumes via frontmatter (knowbase CLAUDE.md §5); the loader lifts
+ * those keys onto the document and serves the body without the frontmatter.
+ * @param {string} raw
+ * @returns {{ data: object, body: string }}
+ */
+function parseFrontmatter(raw) {
+    const text = String(raw || '');
+    const match = text.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+    if (!match) return { data: {}, body: text };
+    let data = {};
+    try {
+        // JSON_SCHEMA keeps ISO dates (e.g. 2027-05-22) as plain strings instead
+        // of coercing them to JS Date objects (whose toString renders as an ugly
+        // locale string). All knowbase frontmatter values are strings/nums/bools.
+        const parsed = yaml.load(match[1], { schema: yaml.JSON_SCHEMA });
+        if (parsed && typeof parsed === 'object') data = parsed;
+    } catch (err) {
+        console.warn(`[KNOWBASE] Frontmatter parse failed: ${err.message}`);
+    }
+    return { data, body: text.slice(match[0].length) };
+}
+
+/**
+ * Whether a document should appear in listings / default retrieval. Hidden when
+ * its status is dead or it is explicitly listed:false (knowbase CLAUDE.md §9).
+ * @param {{status?: string, listed?: boolean}|null|undefined} doc
+ * @returns {boolean}
+ */
+function isSurfaceable(doc) {
+    if (!doc) return false;
+    if (doc.listed === false) return false;
+    if (doc.status && HIDDEN_STATUSES.has(String(doc.status).toLowerCase())) return false;
+    return true;
+}
 
 // Parse owner/repo from the repo URL
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
@@ -39,6 +82,10 @@ let _manifest = null;
 let _deskReviewManifest = null;
 const DESK_REVIEW_MANIFEST_PATH =
     'temporary-reference/fy26-sscc-joint-monitoring/desk-review-document-manifest.json';
+// Master registry of aggregated collections (manuals/handbooks/compiled sets).
+// Single source of truth for the SET of collections (knowbase CLAUDE.md §6).
+let _collectionsRegistry = null;
+const COLLECTIONS_REGISTRY_PATH = 'collections/collections.json';
 
 // Persistent index cache — survives restarts, avoids re-indexing unchanged documents
 const INDEX_CACHE_DIR = process.env.INDEX_CACHE_DIR || path.join(__dirname, '..', 'data');
@@ -138,16 +185,31 @@ async function syncKnowbase() {
     const fetchPromises = mdFiles.map(async (file) => {
         try {
             const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
-            const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+            const raw = Buffer.from(blob.content, 'base64').toString('utf-8');
 
             const topDir = file.path.split('/')[0];
             const category = categorize(topDir, file.path);
+
+            // Lift the knowbase frontmatter (the layer the API consumes) onto the
+            // document and serve the body without it. See knowbase CLAUDE.md §5.
+            const { data: fm, body: content } = parseFrontmatter(raw);
 
             _documentCache[file.path] = {
                 content,
                 lastModified: new Date().toISOString(),
                 sizeBytes: Buffer.byteLength(content, 'utf-8'),
-                category
+                category,
+                // Frontmatter-derived fields consumed by the manual / collections /
+                // site-index surfaces (all optional; absent ⇒ sensible defaults).
+                frontmatter: fm,
+                frontTitle: fm.title || null,
+                manualGroup: fm.manualGroup || null,
+                access: fm.access || null,
+                status: fm.status || null,
+                listed: fm.listed === false ? false : (fm.listed === true ? true : null),
+                collections: fm.collections || null,
+                review: fm.review || null,
+                reconciliation: fm.reconciliation || null
             };
         } catch (err) {
             console.warn(`[KNOWBASE] Failed to fetch ${file.path}: ${err.message}`);
@@ -208,6 +270,7 @@ async function syncKnowbase() {
     // Load manifest if it exists, and build the document index
     await loadManifest(tree);
     await loadDeskReviewManifest(tree);
+    await loadCollectionsRegistry(tree);
     buildDocumentIndex();
     _lastRefresh = Date.now();
 
@@ -286,6 +349,35 @@ async function loadDeskReviewManifest(tree) {
  */
 function getDeskReviewManifest() {
     return _deskReviewManifest;
+}
+
+/**
+ * Load the collections registry (collections/collections.json) from the tree.
+ */
+async function loadCollectionsRegistry(tree) {
+    const file = tree.tree.find(
+        (item) => item.type === 'blob' && item.path === COLLECTIONS_REGISTRY_PATH
+    );
+    if (!file) {
+        _collectionsRegistry = null;
+        return;
+    }
+    try {
+        const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${file.sha}`);
+        const content = Buffer.from(blob.content, 'base64').toString('utf-8');
+        _collectionsRegistry = JSON.parse(content);
+        console.log(`[KNOWBASE] Collections registry loaded with ${(_collectionsRegistry.collections || []).length} collections`);
+    } catch (err) {
+        console.warn('[KNOWBASE] Failed to parse collections.json:', err.message);
+        _collectionsRegistry = null;
+    }
+}
+
+/**
+ * Get the collections registry object (or null if not loaded).
+ */
+function getCollectionsRegistry() {
+    return _collectionsRegistry;
 }
 
 /**
@@ -647,6 +739,7 @@ module.exports = {
     buildDocumentIndex,
     getManifest,
     getDeskReviewManifest,
+    getCollectionsRegistry,
     getDocument,
     getDocumentsByPath,
     getDocumentsByCategory,
@@ -659,5 +752,7 @@ module.exports = {
     estimateTokens,
     searchDocuments,
     getStaticPage,
-    getAllStaticPages
+    getAllStaticPages,
+    isSurfaceable,
+    parseFrontmatter
 };

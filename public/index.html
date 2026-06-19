@@ -1,320 +1,431 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Refuge House Compliance Library</title>
-    <link rel="icon" type="image/png" href="/favicon.png">
-    <style>
-        :root {
-            --rh-primary: #5E3989;
-            --rh-primary-dark: #3c2556;
-            --rh-secondary: #7b4ba5;
-            --rh-accent: #A90533;
-            --rh-bg: #f8fafc;
-            --rh-light-purple: #f3e9fa;
-            --rh-surface: #ffffff;
-            --rh-border: #e2e8f0;
-            --rh-text: #1e293b;
-            --rh-muted: #475569;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: var(--rh-bg);
-            color: var(--rh-text);
-        }
-        .masthead {
-            background: linear-gradient(135deg, var(--rh-primary), var(--rh-primary-dark));
-            color: #fff;
-            border-bottom: 4px solid rgba(255,255,255,0.12);
-        }
-        .masthead-inner {
-            max-width: 860px;
-            margin: 0 auto;
-            padding: 1rem 1.25rem;
-        }
-        .masthead h1 {
-            font-size: 1.25rem;
-            margin-bottom: 0.2rem;
-        }
-        .eyebrow {
-            display: inline-block;
-            margin-bottom: 0.35rem;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            font-weight: 600;
-            border: 1px solid rgba(255,255,255,0.34);
-            border-radius: 999px;
-            padding: 0.2rem 0.55rem;
-        }
-        .container { max-width: 860px; margin: 0 auto; padding: 18px 16px 24px; }
-        .quick-links { margin: 0 0 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-        .quick-links a {
-            display: inline-block;
-            font-size: 0.82rem;
-            text-decoration: none;
-            color: var(--rh-primary);
-            background: var(--rh-light-purple);
-            border: 1px solid #d4b5e4;
-            padding: 6px 10px;
-            border-radius: 8px;
-        }
-        .quick-links a:hover { background: #ead8f4; }
-        .status-bar {
-            background: var(--rh-surface);
-            border: 1px solid var(--rh-border);
-            border-radius: 10px;
-            padding: 14px 18px;
-            margin-bottom: 16px;
-            box-shadow: 0 2px 6px rgba(15,23,42,0.05);
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; }
-        .status-dot.ok { background: #22c55e; }
-        .status-dot.error { background: #ef4444; }
-        .status-text { font-size: 0.85rem; color: var(--rh-muted); }
-        .chat-box {
-            background: var(--rh-surface);
-            border: 1px solid var(--rh-border);
-            border-radius: 10px;
-            box-shadow: 0 2px 6px rgba(15,23,42,0.05);
-            overflow: hidden;
-        }
-        .messages { height: 420px; overflow-y: auto; padding: 20px; }
-        .message { margin-bottom: 16px; }
-        .message.user { text-align: right; }
-        .message .bubble {
-            display: inline-block;
-            max-width: 80%;
-            padding: 10px 14px;
-            border-radius: 12px;
-            font-size: 0.95rem;
-            line-height: 1.5;
-            text-align: left;
-            white-space: pre-wrap;
-        }
-        .message.user .bubble { background: var(--rh-primary); color: #fff; border-bottom-right-radius: 4px; }
-        .message.assistant .bubble { background: #f7f2fb; color: #111827; border-bottom-left-radius: 4px; white-space: normal; }
-        .message.system .bubble { background: #fef3c7; color: #92400e; font-size: 0.85rem; }
-        .message.assistant .bubble h1,
-        .message.assistant .bubble h2,
-        .message.assistant .bubble h3,
-        .message.assistant .bubble h4,
-        .message.assistant .bubble p,
-        .message.assistant .bubble ul,
-        .message.assistant .bubble ol,
-        .message.assistant .bubble pre,
-        .message.assistant .bubble blockquote { margin: 0.45rem 0; }
-        .message.assistant .bubble ul,
-        .message.assistant .bubble ol { padding-left: 1.2rem; }
-        .message.assistant .bubble code { background: #e5e7eb; padding: 0.08rem 0.28rem; border-radius: 4px; font-size: 0.9em; }
-        .message.assistant .bubble pre { background: #111827; color: #f9fafb; padding: 0.6rem 0.7rem; border-radius: 6px; overflow: auto; }
-        .message.assistant .bubble pre code { background: transparent; padding: 0; color: inherit; }
-        .message.assistant .bubble blockquote { border-left: 3px solid var(--rh-accent); padding-left: 0.6rem; color: #4b5563; }
-        .message.assistant .bubble a { color: var(--rh-accent); }
-        .input-area { display: flex; border-top: 1px solid var(--rh-border); }
-        .input-area input { flex: 1; padding: 14px 18px; border: none; font-size: 1rem; outline: none; }
-        .input-area button { padding: 14px 24px; background: var(--rh-primary); color: #fff; border: none; font-size: 1rem; cursor: pointer; font-weight: 500; }
-        .input-area button:hover { background: var(--rh-primary-dark); }
-        .input-area button:disabled { background: #b79ed1; cursor: not-allowed; }
-        .meta { font-size: 0.75rem; color: #9ca3af; margin-top: 4px; }
-        .info { margin-top: 12px; font-size: 0.8rem; color: var(--rh-muted); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Refuge House Compliance Library</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  /* Refuge House design tokens (inlined for portability) */
+  :root {
+    --rh-purple-50:#f5f3ff; --rh-purple-100:#ede9fe; --rh-purple-200:#ddd6fe;
+    --rh-purple-300:#c4b5fd; --rh-purple-400:#a78bfa;
+    --rh-primary:#5e3989; --rh-purple-700:#4b2c72; --rh-purple-800:#3f2a61;
+    --rh-magenta:#a90533; --rh-magenta-900:#870428;
+    --rh-ink:#1a1a2e; --rh-text:#1f2937; --rh-text-2:#6b7280; --rh-text-3:#9ca3af;
+    --rh-border:#e5e7eb; --rh-border-2:#d1d5db; --rh-surface:#fff;
+    --rh-muted:#f9fafb; --rh-sunken:#f3f4f6;
+    --rh-success:#16a34a; --rh-warn:#f59e0b; --rh-warn-bg:#fef3c7; --rh-warn-fg:#92400e;
+    --rh-grad:linear-gradient(135deg,#6a4299 0%,#5e3989 100%);
+    --rh-grad-avatar:linear-gradient(135deg,#5e3989 0%,#870428 100%);
+    --rh-font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --rh-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --rh-shadow-sm:0 1px 3px rgba(15,23,42,.08);
+    --rh-shadow-md:0 4px 10px rgba(107,33,168,.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: var(--rh-font); color: var(--rh-text); background: var(--rh-muted); }
+  a { color: inherit; }
+
+  .app { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ---------- Sidebar ---------- */
+  .side {
+    width: 264px; flex-shrink: 0; height: 100%; background: var(--rh-surface);
+    border-right: 1px solid var(--rh-border); display: flex; flex-direction: column;
+  }
+  .side-logo { padding: 18px 20px 14px; border-bottom: 1px solid var(--rh-border); }
+  .side-logo img { max-width: 158px; height: auto; display: block; }
+  .side-scroll { flex: 1; overflow-y: auto; padding: 16px 12px 20px; }
+  .side-group + .side-group { margin-top: 20px; }
+  .side-label {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--rh-text-3); margin: 0 8px 8px;
+  }
+  .side-link {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin: 1px 0;
+    border-radius: 8px; text-decoration: none; font-size: 13.5px; font-weight: 500;
+    color: var(--rh-text-2); transition: background .16s ease, color .16s ease;
+  }
+  .side-link i { width: 16px; text-align: center; font-size: 13px; color: var(--rh-text-3); flex-shrink: 0; }
+  .side-link:hover { background: var(--rh-muted); color: var(--rh-text); }
+  .side-link.active {
+    background: color-mix(in srgb, var(--rh-primary) 9%, #fff); color: var(--rh-primary);
+    font-weight: 700; box-shadow: inset 3px 0 0 var(--rh-magenta);
+  }
+  .side-link.active i { color: var(--rh-magenta); }
+  /* collection link: title + right-aligned code that never wraps/breaks */
+  .col-link {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; margin: 1px 0;
+    border-radius: 8px; text-decoration: none; color: var(--rh-text-2);
+    transition: background .16s ease; min-width: 0;
+  }
+  .col-link:hover { background: var(--rh-muted); }
+  .col-link:hover .col-title { color: var(--rh-primary); }
+  .col-title {
+    flex: 1; min-width: 0; font-size: 13px; font-weight: 600; line-height: 1.25;
+    color: var(--rh-text); transition: color .16s ease;
+  }
+  .col-code {
+    flex: none; font-size: 9.5px; font-weight: 800; letter-spacing: .03em; white-space: nowrap;
+    color: var(--rh-primary); background: color-mix(in srgb, var(--rh-primary) 12%, #fff);
+    border-radius: 999px; padding: 3px 8px;
+  }
+
+  /* ---------- Main ---------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100%; }
+  .topbar {
+    flex-shrink: 0; background: var(--rh-surface); border-bottom: 1px solid var(--rh-border);
+    padding: 13px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .eyebrow {
+    font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--rh-magenta);
+  }
+  .topbar h1 { font-size: 19px; font-weight: 700; color: var(--rh-primary); margin-top: 1px; }
+  .status {
+    display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px;
+    background: var(--rh-muted); border: 1px solid var(--rh-border); border-radius: 999px;
+    font-size: 12.5px; color: var(--rh-text-2); white-space: nowrap;
+  }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rh-text-3); flex-shrink: 0; }
+  .status.ok .dot { background: var(--rh-success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rh-success) 22%, transparent); }
+  .status.err .dot { background: var(--rh-magenta); }
+  .status b { color: var(--rh-text); font-weight: 700; }
+
+  /* ---------- Chat ---------- */
+  .chat { flex: 1; overflow-y: auto; }
+  .chat-inner { max-width: 780px; margin: 0 auto; padding: 28px 24px 8px; }
+
+  /* empty state */
+  .welcome { text-align: center; padding: 36px 12px 8px; }
+  .welcome-mark {
+    width: 72px; height: 72px; margin: 0 auto 18px; border-radius: 20px;
+    background: var(--rh-purple-50); border: 1px solid var(--rh-purple-200);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .welcome-mark img { width: 46px; height: 46px; }
+  .welcome h2 { font-size: 24px; font-weight: 700; color: var(--rh-ink); letter-spacing: -.01em; }
+  .welcome p { margin-top: 8px; font-size: 14.5px; color: var(--rh-text-2); }
+  .welcome p b { color: var(--rh-primary); font-weight: 700; }
+  .suggest {
+    margin: 26px auto 0; max-width: 680px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .chip {
+    text-align: left; display: flex; align-items: flex-start; gap: 11px; padding: 13px 15px;
+    background: var(--rh-surface); border: 1px solid var(--rh-border); border-radius: 12px;
+    cursor: pointer; font-family: inherit; font-size: 13.5px; color: var(--rh-text);
+    line-height: 1.4; box-shadow: var(--rh-shadow-sm); transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+  }
+  .chip:hover { transform: translateY(-1px); box-shadow: var(--rh-shadow-md); border-color: var(--rh-purple-300); }
+  .chip i { color: var(--rh-magenta); font-size: 14px; margin-top: 1px; flex-shrink: 0; }
+
+  /* messages */
+  .msg { display: flex; gap: 12px; margin-bottom: 22px; }
+  .msg.user { flex-direction: row-reverse; }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex;
+    align-items: center; justify-content: center; font-size: 14px; color: #fff;
+  }
+  .avatar.bot { background: var(--rh-surface); border: 1px solid var(--rh-purple-200); padding: 5px; }
+  .avatar.bot img { width: 100%; height: 100%; object-fit: contain; }
+  .avatar.me { background: var(--rh-grad-avatar); font-size: 12px; font-weight: 700; }
+  .msg-col { min-width: 0; max-width: 80%; }
+  .msg.user .msg-col { display: flex; flex-direction: column; align-items: flex-end; }
+  .bubble { padding: 12px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.6; }
+  .msg.user .bubble { background: var(--rh-grad); color: #fff; border-bottom-right-radius: 5px; }
+  .msg.assistant .bubble {
+    background: var(--rh-surface); border: 1px solid var(--rh-border); color: var(--rh-text);
+    border-bottom-left-radius: 5px; box-shadow: var(--rh-shadow-sm);
+  }
+  .msg.system .bubble {
+    background: var(--rh-warn-bg); color: var(--rh-warn-fg); border: 1px solid color-mix(in srgb, var(--rh-warn) 35%, #fff);
+    font-size: 13px; font-weight: 600;
+  }
+  .meta {
+    margin-top: 7px; font-size: 11.5px; color: var(--rh-text-3); display: flex; align-items: center; gap: 8px;
+    font-family: var(--rh-mono);
+  }
+  .meta .src { color: var(--rh-primary); font-weight: 700; }
+  /* markdown */
+  .bubble h1,.bubble h2,.bubble h3,.bubble h4 { margin: .6rem 0 .35rem; line-height: 1.3; color: var(--rh-ink); }
+  .bubble h3 { font-size: 15.5px; } .bubble h4 { font-size: 14px; }
+  .bubble p { margin: .45rem 0; } .bubble p:first-child { margin-top: 0; } .bubble p:last-child { margin-bottom: 0; }
+  .bubble ul,.bubble ol { margin: .45rem 0; padding-left: 1.25rem; }
+  .bubble li { margin: .2rem 0; }
+  .bubble code { background: var(--rh-sunken); padding: .08rem .3rem; border-radius: 4px; font-family: var(--rh-mono); font-size: .88em; }
+  .bubble pre { background: var(--rh-ink); color: #f9fafb; padding: .7rem .8rem; border-radius: 8px; overflow: auto; margin: .5rem 0; }
+  .bubble pre code { background: transparent; padding: 0; color: inherit; }
+  .bubble blockquote { border-left: 3px solid var(--rh-magenta); padding: .1rem 0 .1rem .7rem; margin: .5rem 0; color: var(--rh-text-2); }
+  .bubble a { color: var(--rh-magenta); font-weight: 600; }
+  .bubble strong { color: var(--rh-ink); }
+  .typing { display: inline-flex; gap: 4px; padding: 2px 0; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--rh-purple-300); animation: blink 1.2s infinite both; }
+  .typing span:nth-child(2){ animation-delay:.2s } .typing span:nth-child(3){ animation-delay:.4s }
+  @keyframes blink { 0%,80%,100%{ opacity:.3 } 40%{ opacity:1 } }
+
+  /* ---------- Composer ---------- */
+  .composer-wrap { flex-shrink: 0; background: linear-gradient(180deg, rgba(249,250,251,0), var(--rh-muted) 38%); padding: 8px 24px 16px; }
+  .composer-inner { max-width: 780px; margin: 0 auto; }
+  .composer {
+    display: flex; align-items: flex-end; gap: 8px; background: var(--rh-surface);
+    border: 1px solid var(--rh-border-2); border-radius: 16px; padding: 7px 7px 7px 8px;
+    box-shadow: var(--rh-shadow-sm); transition: border-color .16s ease, box-shadow .16s ease;
+  }
+  .composer:focus-within { border-color: var(--rh-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rh-primary) 15%, transparent); }
+  .composer textarea {
+    flex: 1; border: none; outline: none; resize: none; font-family: inherit; font-size: 14.5px;
+    line-height: 1.5; color: var(--rh-text); background: transparent; padding: 9px 6px; max-height: 140px;
+  }
+  .composer textarea::placeholder { color: var(--rh-text-3); }
+  .send {
+    flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; border: none; cursor: pointer;
+    background: var(--rh-grad); color: #fff; font-size: 15px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 4px rgba(94,57,137,.28); transition: transform .16s ease, opacity .16s ease;
+  }
+  .send:hover:not(:disabled) { transform: translateY(-1px); }
+  .send:disabled { opacity: .45; cursor: not-allowed; }
+  .composer-note { margin: 9px 4px 0; font-size: 11.5px; color: var(--rh-text-3); text-align: center; }
+  .composer-note i { color: var(--rh-text-3); margin-right: 4px; }
+
+  /* mobile */
+  .menu-btn { display: none; }
+  @media (max-width: 860px) {
+    .side { position: fixed; z-index: 40; transform: translateX(-100%); transition: transform .2s ease; box-shadow: var(--rh-shadow-md); }
+    .side.open { transform: none; }
+    .menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--rh-border); background: var(--rh-surface); color: var(--rh-primary); cursor: pointer; }
+    .suggest { grid-template-columns: 1fr; }
+    .topbar { padding: 12px 16px; }
+    .scrim { display: none; position: fixed; inset: 0; background: rgba(26,26,46,.4); z-index: 30; }
+    .scrim.show { display: block; }
+  }
+</style>
 </head>
 <body>
-    <header class="masthead">
-        <div class="masthead-inner">
-            <span class="eyebrow">Refuge House, Inc.</span>
-            <h1>Refuge House Compliance Library</h1>
-        </div>
-    </header>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="side" id="side">
+    <div class="side-logo"><img src="/logo.png" alt="Refuge House — foster care and adoption"></div>
+    <div class="side-scroll">
+      <div class="side-group">
+        <div class="side-label">Workspaces</div>
+        <a class="side-link active" href="/manual"><i class="fas fa-book-open"></i>Policies &amp; Procedures</a>
+        <a class="side-link" href="/site-index"><i class="fas fa-sitemap"></i>Full Site Index</a>
+        <a class="side-link" href="/review/fy26-sscc"><i class="fas fa-clipboard-check"></i>FY-26 Desk Review</a>
+      </div>
+      <div class="side-group" id="collectionsNav" style="display:none">
+        <div class="side-label">Collections</div>
+        <div id="collectionsLinks"></div>
+      </div>
+      <div class="side-group">
+        <div class="side-label">Reference</div>
+        <a class="side-link" href="/public/documents/about" target="_blank" rel="noopener"><i class="fas fa-circle-info"></i>About</a>
+      </div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" onclick="closeSide()"></div>
 
-    <div class="container">
-        <div class="quick-links">
-            <a href="/site-index">Site Index</a>
-            <a href="/public/documents/about" target="_blank" rel="noopener">About</a>
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:14px;min-width:0">
+        <button class="menu-btn" onclick="openSide()" aria-label="Menu"><i class="fas fa-bars"></i></button>
+        <div style="min-width:0">
+          <div class="eyebrow">Refuge House, Inc.</div>
+          <h1>Compliance Library</h1>
         </div>
-
-        <div class="status-bar">
-            <div class="status-dot" id="statusDot"></div>
-            <span class="status-text" id="statusText">Checking API status...</span>
-        </div>
-
-        <div class="chat-box">
-            <div class="messages" id="messages">
-                <div class="message system">
-                    <div class="bubble">Ask any question about Refuge House policies, procedures, or regulations.</div>
-                </div>
-            </div>
-            <div class="input-area">
-                <input type="text" id="input" placeholder="e.g. How often does a child need a CANS assessment?" autocomplete="off" />
-                <button id="sendBtn" onclick="sendMessage()">Send</button>
-            </div>
-        </div>
-
-        <p class="info">This page talks directly to the Compliance API. No API key is needed from this console for testing.</p>
+      </div>
+      <div class="status" id="status"><span class="dot"></span><span id="statusText">Checking API status…</span></div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
-    <script>
-        const messagesEl = document.getElementById('messages');
-        const inputEl = document.getElementById('input');
-        const sendBtn = document.getElementById('sendBtn');
-        const statusDot = document.getElementById('statusDot');
-        const statusText = document.getElementById('statusText');
-        let history = [];
+    <div class="chat" id="chat">
+      <div class="chat-inner" id="chatInner">
+        <div class="welcome" id="welcome">
+          <div class="welcome-mark"><img src="/mark-purple.png" alt=""></div>
+          <h2>Ask the Compliance Library</h2>
+          <p>Grounded answers from <b id="welcomeDocs">Refuge House policy</b> — policies, procedures &amp; regulations.</p>
+          <div class="suggest" id="suggest"></div>
+        </div>
+      </div>
+    </div>
 
-        // Check health on load
-        async function checkHealth() {
-            try {
-                const res = await fetch('/health');
-                const data = await res.json();
-                if (data.status === 'ok') {
-                    statusDot.className = 'status-dot ok';
-                    const docs = data.knowbase?.documentsLoaded || 0;
-                    statusText.textContent = `API is running | ${docs} documents loaded | Model: ${data.anthropic?.model || 'unknown'}`;
-                } else {
-                    throw new Error('Unhealthy');
-                }
-            } catch (e) {
-                statusDot.className = 'status-dot error';
-                statusText.textContent = 'API is not responding - check deployment';
-            }
+    <div class="composer-wrap">
+      <div class="composer-inner">
+        <div class="composer">
+          <textarea id="input" rows="1" placeholder="e.g. How often does a child need a CANS assessment?" autocomplete="off"></textarea>
+          <button class="send" id="sendBtn" onclick="sendMessage()" aria-label="Send"><i class="fas fa-paper-plane"></i></button>
+        </div>
+        <div class="composer-note"><i class="fas fa-shield-halved"></i>Answers cite Refuge House policy — verify against source documents before acting.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script>
+  // DEMO mode runs when this file isn't served from the live API host, so the
+  // preview looks alive. On compliance.refugehouse.org it talks to the real API.
+  const DEMO = !location.host.endsWith('refugehouse.org');
+
+  const chatInner = document.getElementById('chatInner');
+  const welcome = document.getElementById('welcome');
+  const inputEl = document.getElementById('input');
+  const sendBtn = document.getElementById('sendBtn');
+  const statusEl = document.getElementById('status');
+  const statusText = document.getElementById('statusText');
+  let history = [];
+
+  const SUGGESTIONS = [
+    { icon: 'fa-clipboard-list', q: 'How often does a child need a CANS assessment?' },
+    { icon: 'fa-user-shield', q: 'What are the background check requirements for a new foster parent?' },
+    { icon: 'fa-pills', q: 'What is the policy for logging a missed medication dose?' },
+    { icon: 'fa-house-chimney-medical', q: 'How many children can be placed in a single foster home?' },
+  ];
+
+  const DEMO_COLLECTIONS = [
+    { title: 'Agency Policy & Procedure Manual', code: 'GEN-PP', url: '/collections/GEN-PP' },
+    { title: 'Foster Care Program Handbook', code: 'FC-HB', url: '#' },
+    { title: 'Adoption Services Handbook', code: 'AS-HB', url: '#' },
+    { title: 'Operations Manual', code: 'OPS-PP', url: '#' },
+    { title: 'Personnel & HR Manual', code: 'HR-MAN', url: '#' },
+    { title: 'Administration & Governance', code: 'ADM-GOV', url: '#' },
+    { title: 'Caregiver (Foster/Adoptive Parent) Manual', code: 'CG-MAN', url: '#' },
+    { title: 'Training Curriculum & Requirements', code: 'TR-CUR', url: '#' },
+    { title: 'T3C Service Package Snapshots', code: 'T3C-PKG', url: '#' },
+    { title: 'Compliance Review Assets', code: 'CRA', url: '#' },
+  ];
+
+  function escapeHtml(str){ const d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+  function renderMarkdown(md){
+    if(!md) return '';
+    if(!window.marked||!window.DOMPurify) return escapeHtml(md);
+    return window.DOMPurify.sanitize(window.marked.parse(md,{gfm:true,breaks:true}));
+  }
+
+  // Suggestions
+  document.getElementById('suggest').innerHTML = SUGGESTIONS.map((s,i)=>
+    `<button class="chip" onclick="askSuggestion(${i})"><i class="fas ${s.icon}"></i><span>${escapeHtml(s.q)}</span></button>`
+  ).join('');
+  function askSuggestion(i){ inputEl.value = SUGGESTIONS[i].q; sendMessage(); }
+
+  // Auto-grow textarea + enter to send
+  inputEl.addEventListener('input', ()=>{ inputEl.style.height='auto'; inputEl.style.height=Math.min(inputEl.scrollHeight,140)+'px'; });
+  inputEl.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey && !sendBtn.disabled){ e.preventDefault(); sendMessage(); } });
+
+  function setStatus(state, html){ statusEl.className = 'status ' + state; statusText.innerHTML = html; }
+
+  async function checkHealth(){
+    if(DEMO){ setStatus('ok', '<b>224</b> documents · Claude Haiku 4.5'); return; }
+    try{
+      const res = await fetch('/health'); const data = await res.json();
+      if(data.status==='ok'){
+        const docs = data.knowbase?.documentsLoaded || 0;
+        setStatus('ok', `<b>${docs}</b> documents · ${escapeHtml(data.anthropic?.model||'model')}`);
+        document.getElementById('welcomeDocs').textContent = `${docs} Refuge House policy documents`;
+      } else throw new Error('unhealthy');
+    }catch(e){ setStatus('err','API is not responding'); }
+  }
+
+  async function loadCollectionsNav(){
+    let cols = [];
+    if(DEMO){ cols = DEMO_COLLECTIONS; }
+    else {
+      try{
+        const res = await fetch('/collections?format=json',{ headers:{Accept:'application/json'}, credentials:'same-origin' });
+        if(!res.ok) return; const data = await res.json(); cols = (data&&data.collections)||[];
+      }catch(e){ return; }
+    }
+    if(!cols.length) return;
+    document.getElementById('collectionsLinks').innerHTML = cols.map(c=>
+      `<a class="col-link" href="${encodeURI(c.url)}"><span class="col-title">${escapeHtml(c.title)}</span><span class="col-code">${escapeHtml(c.code)}</span></a>`
+    ).join('');
+    document.getElementById('collectionsNav').style.display='';
+  }
+
+  function clearWelcome(){ if(welcome){ welcome.remove(); } }
+  function scrollDown(){ const c=document.getElementById('chat'); c.scrollTop=c.scrollHeight; }
+
+  function addUser(text){
+    const div=document.createElement('div'); div.className='msg user';
+    div.innerHTML = `<div class="avatar me">JD</div><div class="msg-col"><div class="bubble">${escapeHtml(text)}</div></div>`;
+    chatInner.appendChild(div); scrollDown();
+  }
+  function addSystem(text){
+    const div=document.createElement('div'); div.className='msg system';
+    div.innerHTML = `<div class="avatar bot"><img src="/mark-purple.png" alt=""></div><div class="msg-col"><div class="bubble">${escapeHtml(text)}</div></div>`;
+    chatInner.appendChild(div); scrollDown();
+  }
+  function addAssistant(){
+    const div=document.createElement('div'); div.className='msg assistant';
+    div.innerHTML = `<div class="avatar bot"><img src="/mark-purple.png" alt=""></div><div class="msg-col"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="meta" style="display:none"></div></div>`;
+    chatInner.appendChild(div); scrollDown();
+    return { bubble: div.querySelector('.bubble'), meta: div.querySelector('.meta'), div };
+  }
+
+  const DEMO_ANSWER = `Under Refuge House policy, a **CANS (Child and Adolescent Needs and Strengths) assessment** is completed on the following schedule:\n\n- **Within 30 days** of the child's initial placement.\n- **Every 90 days** (quarterly) thereafter while the child remains in care.\n- **Upon any significant change** in the child's circumstances or level of care.\n- **At discharge** from the program.\n\n> The assigned case manager is responsible for ensuring each assessment is completed on time and uploaded to the child's folio.\n\nSee the *Foster Care Program Handbook* (**FC-HB §4.2**) for the full requirement.`;
+
+  function demoStream(bubble, meta, onDone){
+    const words = DEMO_ANSWER.split(' '); let i=0, acc='';
+    const tick=()=>{
+      if(i>=words.length){ bubble.innerHTML=renderMarkdown(acc); meta.style.display=''; meta.innerHTML='<span class="src">7 docs referenced</span> · 842ms'; scrollDown(); onDone(); return; }
+      acc += (i?' ':'')+words[i++]; bubble.textContent=acc; scrollDown();
+      setTimeout(tick, 18 + Math.random()*30);
+    };
+    tick();
+  }
+
+  async function sendMessage(){
+    const message = inputEl.value.trim(); if(!message) return;
+    inputEl.value=''; inputEl.style.height='auto'; sendBtn.disabled=true;
+    clearWelcome(); addUser(message);
+    const { bubble, meta } = addAssistant();
+
+    if(DEMO){
+      demoStream(bubble, meta, ()=>{
+        history.push({role:'user',content:message}); history.push({role:'assistant',content:DEMO_ANSWER});
+        sendBtn.disabled=false; inputEl.focus();
+      });
+      return;
+    }
+
+    let fullAnswer='', docCount='?', responseMs='?';
+    try{
+      const res = await fetch('/console/chat/stream',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message,history}) });
+      if(!res.ok){ const err=await res.json(); bubble.parentElement.parentElement.remove(); addSystem('Error: '+(err.error||err.message||'Unknown error')); sendBtn.disabled=false; inputEl.focus(); return; }
+      const reader=res.body.getReader(); const decoder=new TextDecoder(); let buffer='';
+      while(true){
+        const {done,value}=await reader.read(); if(done) break;
+        buffer+=decoder.decode(value,{stream:true}); const lines=buffer.split('\n'); buffer=lines.pop();
+        for(const line of lines){
+          if(!line.startsWith('data: ')) continue; const payload=line.slice(6); if(payload==='[DONE]') continue;
+          try{ const ev=JSON.parse(payload);
+            if(ev.type==='text'){ fullAnswer+=ev.data; bubble.textContent=fullAnswer; scrollDown(); }
+            else if(ev.type==='meta'){ docCount=ev.data.documentsInContext||'?'; }
+            else if(ev.type==='done'){ responseMs=ev.data.responseTimeMs||'?'; }
+            else if(ev.type==='error'){ addSystem('Error: '+ev.data); }
+          }catch(e){}
         }
-        checkHealth();
+      }
+      if(fullAnswer){ bubble.innerHTML=renderMarkdown(fullAnswer); meta.style.display=''; meta.innerHTML=`<span class="src">${docCount} docs referenced</span> · ${responseMs}ms`;
+        history.push({role:'user',content:message}); history.push({role:'assistant',content:fullAnswer}); }
+      else { bubble.parentElement.parentElement.remove(); }
+    }catch(e){ bubble.parentElement.parentElement.remove(); addSystem('Network error: '+e.message); }
+    sendBtn.disabled=false; inputEl.focus();
+  }
 
-        inputEl.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !sendBtn.disabled) sendMessage();
-        });
+  function openSide(){ document.getElementById('side').classList.add('open'); document.getElementById('scrim').classList.add('show'); }
+  function closeSide(){ document.getElementById('side').classList.remove('open'); document.getElementById('scrim').classList.remove('show'); }
 
-        function addMessage(role, text, meta) {
-            const div = document.createElement('div');
-            div.className = 'message ' + role;
-            let html = '<div class="bubble">' + escapeHtml(text) + '</div>';
-            if (meta) {
-                html += '<div class="meta">' + meta + '</div>';
-            }
-            div.innerHTML = html;
-            messagesEl.appendChild(div);
-            messagesEl.scrollTop = messagesEl.scrollHeight;
-        }
+  checkHealth();
+  loadCollectionsNav();
+</script>
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
-        function renderMarkdown(mdText) {
-            if (!mdText) return '';
-            if (!window.marked || !window.DOMPurify) {
-                return escapeHtml(mdText);
-            }
-
-            const rawHtml = window.marked.parse(mdText, {
-                gfm: true,
-                breaks: true
-            });
-
-            return window.DOMPurify.sanitize(rawHtml);
-        }
-
-        async function sendMessage() {
-            const message = inputEl.value.trim();
-            if (!message) return;
-
-            inputEl.value = '';
-            sendBtn.disabled = true;
-            addMessage('user', message);
-
-            // Create an empty assistant bubble that we'll fill with streaming text
-            const div = document.createElement('div');
-            div.className = 'message assistant';
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
-            bubble.textContent = '';
-            div.appendChild(bubble);
-            const metaDiv = document.createElement('div');
-            metaDiv.className = 'meta';
-            div.appendChild(metaDiv);
-            messagesEl.appendChild(div);
-
-            let fullAnswer = '';
-            let docCount = '?';
-            let responseMs = '?';
-
-            try {
-                const res = await fetch('/console/chat/stream', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message, history })
-                });
-
-                if (!res.ok) {
-                    const err = await res.json();
-                    addMessage('system', 'Error: ' + (err.error || err.message || 'Unknown error'));
-                    div.remove();
-                    sendBtn.disabled = false;
-                    inputEl.focus();
-                    return;
-                }
-
-                const reader = res.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // keep incomplete line in buffer
-
-                    for (const line of lines) {
-                        if (!line.startsWith('data: ')) continue;
-                        const payload = line.slice(6);
-                        if (payload === '[DONE]') continue;
-
-                        try {
-                            const event = JSON.parse(payload);
-                            if (event.type === 'text') {
-                                fullAnswer += event.data;
-                                bubble.textContent = fullAnswer;
-                                messagesEl.scrollTop = messagesEl.scrollHeight;
-                            } else if (event.type === 'meta') {
-                                docCount = event.data.documentsInContext || '?';
-                            } else if (event.type === 'done') {
-                                responseMs = event.data.responseTimeMs || '?';
-                            } else if (event.type === 'error') {
-                                addMessage('system', 'Error: ' + event.data);
-                            }
-                        } catch (e) { /* skip malformed lines */ }
-                    }
-                }
-
-                if (fullAnswer) {
-                    bubble.innerHTML = renderMarkdown(fullAnswer);
-                }
-
-                metaDiv.textContent = `${docCount} docs referenced | ${responseMs}ms`;
-                if (fullAnswer) {
-                    history.push({ role: 'user', content: message });
-                    history.push({ role: 'assistant', content: fullAnswer });
-                }
-            } catch (e) {
-                addMessage('system', 'Network error: ' + e.message);
-                if (!fullAnswer) div.remove();
-            }
-
-            sendBtn.disabled = false;
-            inputEl.focus();
-        }
-    </script>
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#5e3989"/><g fill="#fff"><rect x="30" y="42" width="40" height="30" rx="4"/><path d="M28 44 L50 28 L72 44 Z"/></g><circle cx="50" cy="57" r="5" fill="#a90533"/></svg>
+</template>
 </body>
 </html>

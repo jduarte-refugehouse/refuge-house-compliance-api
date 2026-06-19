@@ -68,9 +68,13 @@ const documentsRoutes = require('./routes/documents');
 // Public routes (no authentication required)
 const pagesRoutes = require('./routes/pages');
 const siteIndexRoutes = require('./routes/site-index');
+const manualRoutes = require('./routes/manual');
+const collectionsRoutes = require('./routes/collections');
 const reviewRoutes = require('./routes/review');
 app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc.
 app.use('/review', reviewRoutes); // Desk-review portals (FY-26 SSCC Joint Monitoring)
+app.use('/manual', manualRoutes); // Policies & Procedures workspace (paired policy/procedure + CQI)
+app.use('/collections', collectionsRoutes); // Compiled manuals/handbooks from the collections registry
 app.use('/', siteIndexRoutes);    // Public Site Index for policies/procedures + HTML resources
 app.use('/console/chat', publicConsoleProtection, chatRoutes); // Public console chat with abuse controls
 app.use('/', healthRoutes);
