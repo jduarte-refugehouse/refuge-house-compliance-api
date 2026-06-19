@@ -30,7 +30,18 @@
 // static asset /review/review.js.
 const express = require('express');
 const router = express.Router();
-const { refreshIfStale, getReviewManifest, listReviews } = require('../services/knowbase-loader');
+const {
+    refreshIfStale,
+    getReviewManifest,
+    listReviews,
+    getAllDocuments,
+    findDocBySlugOrPath,
+    pathToSlug
+} = require('../services/knowbase-loader');
+const { findCollection } = require('../services/collections');
+const { allows, deny, wantsJson } = require('../middleware/human-auth');
+const { normalizeAccess, TIER_RANK } = require('../utils/access');
+const { renderHtmlPage } = require('./public-documents');
 
 const BRAND = '#5E3989';
 
@@ -636,6 +647,68 @@ router.get('/:reviewId([a-zA-Z0-9_-]+)', async (req, res) => {
         return renderUnavailable(res, reviewId);
     }
     res.type('html').send(renderPage(manifest, reviewId));
+});
+
+// GET /review/:collection/:slug — a knowbase asset served inside an
+// authenticated collection / review context. Resolves ANY loaded markdown asset
+// by slug or repo path (including listed:false curated artifacts like the SSCC
+// variance matrix) and gates by the MORE restrictive of the asset's own access
+// and the collection's audience. The /review mount already requires reviewer
+// tier; a staff-tier asset is further enforced here, so a reviewer (non-staff)
+// is correctly denied a staff asset.
+router.get('/:collection/:slug(.*)', async (req, res) => {
+    try { await refreshIfStale(); } catch (err) { console.warn('[REVIEW] refresh failed:', err.message); }
+    noStore(res);
+
+    const code = String(req.params.collection || '').trim();
+    const collection = findCollection(code);
+    if (!collection) {
+        if (wantsJson(req)) return res.status(404).json({ error: `Unknown collection '${code}'` });
+        return res.status(404).type('html').send(
+            '<!doctype html><body style="font-family:sans-serif;text-align:center;padding:4rem;">'
+            + '<h2>Collection not found</h2><p><a href="/collections">All collections</a></p></body>'
+        );
+    }
+
+    const result = findDocBySlugOrPath(req.params.slug);
+    if (!result) {
+        if (wantsJson(req)) return res.status(404).json({ error: `Document not found: ${req.params.slug}` });
+        return res.status(404).type('html').send(
+            '<!doctype html><body style="font-family:sans-serif;text-align:center;padding:4rem;">'
+            + `<h2>Document not found</h2><p><a href="/collections/${encodeURIComponent(code)}">Back to ${escapeHtml(collection.title || code)}</a></p></body>`
+        );
+    }
+
+    const { path: docPath, doc } = result;
+
+    // Gate by the MORE restrictive of the asset's own access and the
+    // collection's audience (CLAUDE.md: gate by item access else audience).
+    const itemTier = normalizeAccess(doc.access);
+    const audienceTier = normalizeAccess(collection.audience);
+    const requiredTier = TIER_RANK[itemTier] >= TIER_RANK[audienceTier] ? itemTier : audienceTier;
+    if (!allows(req, requiredTier)) return deny(req, res, requiredTier);
+
+    const slug = pathToSlug(docPath);
+    const title = doc.frontTitle || docPath.split('/').pop().replace(/\.md$/i, '');
+
+    if (req.query.format === 'json') {
+        return res.json({
+            collection: code,
+            slug,
+            path: docPath,
+            title,
+            access: requiredTier,
+            url: `/review/${encodeURIComponent(code)}/${slug}`,
+            content: doc.content
+        });
+    }
+    if (req.query.format === 'markdown') {
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+        return res.send(doc.content);
+    }
+
+    const html = renderHtmlPage(title, doc.content, docPath, doc.lastModified, getAllDocuments());
+    res.type('html').send(html);
 });
 
 module.exports = router;

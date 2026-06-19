@@ -135,6 +135,33 @@ function pushedMembers(collection) {
     const resources = Array.isArray(collection.resources) ? collection.resources : [];
     const out = [];
     for (const r of resources) {
+        // type: document — an explicitly-curated knowbase markdown asset (ref is a
+        // repo path) surfaced inside an AUTHENTICATED review/collection view at
+        // /review/<code>/<slug>. Because this is deliberate human curation in the
+        // registry, it intentionally overrides `listed: false` (the asset is meant
+        // to appear in this review collection), but still inherits the doc's own
+        // access tier (e.g. the staff-only SSCC variance matrix stays staff).
+        const rtype = String((r && r.type) || '').trim().toLowerCase();
+        if (rtype === 'document') {
+            const repoPath = String(r.ref || '').replace(/^\.?\//, '').replace(/^\/+/, '');
+            const doc = repoPath ? getDocument(repoPath) : null;
+            if (!doc) continue; // unresolvable ref — skip rather than dangle
+            const access = r.access ? normalizeAccess(r.access) : (accessForDoc(doc) || tier);
+            out.push({
+                title: r.title || doc.frontTitle || repoPath.split('/').pop().replace(/\.md$/i, ''),
+                category: r.category || null,
+                order: typeof r.order === 'number' ? r.order : null,
+                date: r.date || null,
+                type: 'document',
+                href: `/review/${encodeURIComponent(collection.code)}/${pathToSlug(repoPath)}`,
+                external: false,
+                access,
+                path: repoPath,
+                source: 'push'
+            });
+            continue;
+        }
+
         const resolved = resolveRef(r);
         // If a pushed resource points at a markdown doc, honor the same exclusion
         // and inherit the doc's own access when no override is given.

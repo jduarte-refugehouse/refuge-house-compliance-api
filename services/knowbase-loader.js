@@ -703,6 +703,51 @@ function getDocument(relativePath) {
 }
 
 /**
+ * URL-safe slug for a document path — basename without extension, lowercased,
+ * with non-alphanumerics collapsed to single hyphens. Deterministic:
+ *   "temporary-reference/.../SSCC-variance-matrix.md" -> "sscc-variance-matrix"
+ */
+function pathToSlug(docPath) {
+    const basename = String(docPath || '').split('/').pop().replace(/\.md$/i, '');
+    return basename
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '');
+}
+
+/**
+ * Resolve a loaded markdown document by EITHER its exact repo-relative path or
+ * its slug. Direct addressing works for ANY loaded .md regardless of `listed`
+ * or `status` — segregation (CLAUDE.md §9) governs listings/nav/default
+ * retrieval, not direct slug/path retrieval. Slug collisions resolve
+ * deterministically (shortest path, then lexical) so a given slug is stable.
+ *
+ * @param {string} idOrPath - a slug, a repo path, or a repo path without `.md`
+ * @returns {{ path: string, doc: object }|null}
+ */
+function findDocBySlugOrPath(idOrPath) {
+    if (!idOrPath) return null;
+    let id = String(idOrPath).trim();
+    try { id = decodeURIComponent(id); } catch (_e) { /* keep raw on bad encoding */ }
+    id = id.replace(/^\.?\//, '').replace(/^\/+/, '');
+    if (!id) return null;
+
+    // 1) Exact repo path (with or without the .md extension).
+    if (_documentCache[id]) return { path: id, doc: _documentCache[id] };
+    if (!/\.md$/i.test(id) && _documentCache[`${id}.md`]) {
+        return { path: `${id}.md`, doc: _documentCache[`${id}.md`] };
+    }
+
+    // 2) Slug match across all loaded docs (deterministic on collision).
+    const want = pathToSlug(id);
+    if (!want) return null;
+    const matches = Object.keys(_documentCache)
+        .filter((p) => pathToSlug(p) === want)
+        .sort((a, b) => a.length - b.length || a.localeCompare(b));
+    return matches.length ? { path: matches[0], doc: _documentCache[matches[0]] } : null;
+}
+
+/**
  * Get all documents matching a directory prefix.
  */
 function getDocumentsByPath(pathPrefix) {
@@ -871,6 +916,8 @@ module.exports = {
     isSurfaceable,
     HIDDEN_STATUSES,
     getDocument,
+    pathToSlug,
+    findDocBySlugOrPath,
     getDocumentsByPath,
     getDocumentsByCategory,
     getAllDocuments,

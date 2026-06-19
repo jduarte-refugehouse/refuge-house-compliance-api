@@ -90,8 +90,10 @@ const siteIndexRoutes = require('./routes/site-index');
 const manualRoutes = require('./routes/manual');
 const collectionsRoutes = require('./routes/collections');
 const reviewRoutes = require('./routes/review');
+const documentsPortalRoutes = require('./routes/documents-portal');
 app.use('/pages', pagesRoutes);   // Static HTML pages for foster parents, staff, etc. (public)
 app.use('/review', requireTier('reviewer'), reviewRoutes); // Desk-review portals — reviewer tier (key or staff)
+app.use('/documents', documentsPortalRoutes); // Link-addressable docs — gated per-asset (default staff); listed:false directly retrievable
 app.use('/manual', manualRoutes); // Policies & Procedures workspace (public; per-doc access filtered)
 app.use('/collections', collectionsRoutes); // Registry-driven collections (public; per-item access filtered)
 app.use('/', siteIndexRoutes);    // Site Index — listing filtered per caller tier

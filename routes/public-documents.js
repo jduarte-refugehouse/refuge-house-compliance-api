@@ -727,3 +727,7 @@ router.get('/:slug', (req, res) => {
 });
 
 module.exports = router;
+// Reused by the authenticated /documents portal and the /review collection view
+// so all knowbase markdown renders through one branded renderer.
+module.exports.renderHtmlPage = renderHtmlPage;
+module.exports.getDocumentFamily = getDocumentFamily;
