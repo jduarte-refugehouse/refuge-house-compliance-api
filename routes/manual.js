@@ -196,7 +196,7 @@ router.get('/', async (req, res) => {
     .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:.9rem; }
     .card { background:var(--rh-surface); border:1px solid var(--rh-border); border-radius:12px; padding:.9rem 1rem 1rem; display:flex; flex-direction:column; gap:.5rem; box-shadow:0 1px 2px rgba(15,23,42,.04); }
     .card-top { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
-    .code { font-size:.72rem; font-weight:700; letter-spacing:.02em; color:#fff; background:var(--rh-primary); border-radius:6px; padding:.12rem .45rem; }
+    .code { display:inline-block; white-space:nowrap; font-size:.72rem; font-weight:700; letter-spacing:.02em; color:#fff; background:var(--rh-primary); border-radius:6px; padding:.12rem .45rem; }
     .dept { font-size:.72rem; color:var(--rh-muted); }
     .status { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; border-radius:999px; padding:.08rem .5rem; }
     .status-paired { color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }

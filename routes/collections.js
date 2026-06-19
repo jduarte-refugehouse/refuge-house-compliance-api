@@ -61,7 +61,7 @@ const PAGE_HEAD = `<head>
     .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:.9rem; }
     .card { background:var(--rh-surface); border:1px solid var(--rh-border); border-radius:12px; padding:.9rem 1rem 1rem; display:flex; flex-direction:column; gap:.5rem; box-shadow:0 1px 2px rgba(15,23,42,.04); }
     .card-top { display:flex; align-items:center; gap:.45rem; flex-wrap:wrap; }
-    .code { font-size:.72rem; font-weight:700; letter-spacing:.02em; color:#fff; background:var(--rh-primary); border-radius:6px; padding:.12rem .45rem; }
+    .code { display:inline-block; white-space:nowrap; font-size:.72rem; font-weight:700; letter-spacing:.02em; color:#fff; background:var(--rh-primary); border-radius:6px; padding:.12rem .45rem; }
     .pill { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; border-radius:999px; padding:.08rem .5rem; color:var(--rh-primary); background:var(--rh-light-purple); border:1px solid #d4b5e4; }
     .date { font-size:.72rem; font-weight:700; color:#166534; background:#dcfce7; border:1px solid #bbf7d0; border-radius:6px; padding:.06rem .4rem; }
     .card-title { font-size:1rem; margin:.1rem 0 0; color:var(--rh-text); }
