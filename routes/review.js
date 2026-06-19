@@ -376,7 +376,8 @@ body{margin:0;background:var(--rh-bg);color:var(--rh-text);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.6}
 a{color:var(--rh-accent)}
 .rh-header{background:linear-gradient(135deg,var(--rh-primary-dark) 0%,var(--rh-primary) 50%,var(--rh-accent) 100%);
-  color:#fff;padding:1.5rem 1.5rem 1.25rem}
+  color:#fff;padding:1.5rem 0 1.25rem}
+.rh-header-inner{max-width:1080px;margin:0 auto;padding:0 1.5rem}
 .rh-header .eyebrow{display:inline-block;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;opacity:.92;font-weight:600}
 .rh-header h1{margin:.3rem 0 .55rem;font-size:1.5rem;line-height:1.25}
 .header-meta{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center}
@@ -385,7 +386,8 @@ a{color:var(--rh-accent)}
 .badge-temp{background:rgba(167,139,250,.32);color:#fff;border:1px solid rgba(167,139,250,.6)}
 .header-links{margin-top:.6rem}
 .header-links a{color:#fff;font-size:.82rem;text-decoration:underline;margin-right:1rem;opacity:.95}
-.glance{background:#f0ebfa;border-bottom:1.5px solid #ddd6fe;display:flex;flex-wrap:wrap;gap:.6rem;padding:.7rem 1.5rem}
+.glance{background:#f0ebfa;border-bottom:1.5px solid #ddd6fe;padding:.7rem 0}
+.glance-inner{max-width:1080px;margin:0 auto;padding:0 1.5rem;display:flex;flex-wrap:wrap;gap:.6rem}
 .tile{background:#fff;border:1px solid #ddd6fe;border-radius:8px;padding:.45rem .7rem;min-width:84px}
 .tile .lab{font-size:.62rem;text-transform:uppercase;color:#7c3aed;font-weight:600;letter-spacing:.03em}
 .tile .val{font-size:1rem;font-weight:700;color:var(--rh-primary-dark)}
@@ -508,25 +510,29 @@ footer.note{max-width:1080px;margin:0 auto;padding:0 1.5rem 2.5rem;color:var(--r
 </head>
 <body data-review-id="${escapeHtml(reviewId)}">
 <header class="rh-header">
-  <span class="eyebrow">${escapeHtml(eyebrow)}</span>
-  <h1>${escapeHtml(title)}</h1>
-  <div class="header-meta">
-    ${renderBadges(manifest)}
-    <span style="font-size:.78rem;opacity:.9;margin-left:.3rem">${generated ? 'Manifest generated ' + generated : ''}${toolRev}</span>
-  </div>
-  <div class="header-links">
-    <a href="/site-index">← Policy manual / site index</a>
-    <a href="/review/${escapeHtml(reviewId)}.json" target="_blank" rel="noopener">View manifest JSON</a>
+  <div class="rh-header-inner">
+    <span class="eyebrow">${escapeHtml(eyebrow)}</span>
+    <h1>${escapeHtml(title)}</h1>
+    <div class="header-meta">
+      ${renderBadges(manifest)}
+      <span style="font-size:.78rem;opacity:.9;margin-left:.3rem">${generated ? 'Manifest generated ' + generated : ''}${toolRev}</span>
+    </div>
+    <div class="header-links">
+      <a href="/site-index">← Policy manual / site index</a>
+      <a href="/review/${escapeHtml(reviewId)}.json" target="_blank" rel="noopener">View manifest JSON</a>
+    </div>
   </div>
 </header>
 
 <div class="glance">
-  <div class="tile"><div class="lab">Total items</div><div class="val">${items.length}</div></div>
-  <div class="tile"><div class="lab">Sections</div><div class="val">${groups.length}</div></div>
-  <div class="tile"><div class="lab">Reviewed</div><div class="val" id="t-reviewed">0</div></div>
-  <div class="tile"><div class="lab">Transitioning</div><div class="val" id="t-trans">0</div></div>
-  <div class="tile"><div class="lab">Legacy</div><div class="val" id="t-legacy">0</div></div>
-  <div class="tile"><div class="lab">Unmapped</div><div class="val" id="t-unmapped">0</div></div>
+  <div class="glance-inner">
+    <div class="tile"><div class="lab">Total items</div><div class="val">${items.length}</div></div>
+    <div class="tile"><div class="lab">Sections</div><div class="val">${groups.length}</div></div>
+    <div class="tile"><div class="lab">Reviewed</div><div class="val" id="t-reviewed">0</div></div>
+    <div class="tile"><div class="lab">Transitioning</div><div class="val" id="t-trans">0</div></div>
+    <div class="tile"><div class="lab">Legacy</div><div class="val" id="t-legacy">0</div></div>
+    <div class="tile"><div class="lab">Unmapped</div><div class="val" id="t-unmapped">0</div></div>
+  </div>
 </div>
 
 <div class="wrap">

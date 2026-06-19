@@ -308,8 +308,9 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
             border-bottom: 4px solid rgba(255,255,255,0.12);
         }
         .header-inner {
-            max-width: 980px;
+            max-width: 900px;
             margin: 0 auto;
+            padding: 0 2.2rem;
         }
         .eyebrow {
             display: inline-block;

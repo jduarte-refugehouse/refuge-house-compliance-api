@@ -78,7 +78,8 @@ router.get('/', (req, res) => {
   :root{--rh-primary:#5E3989;--rh-primary-dark:#3c2556;--rh-accent:#A90533;--rh-bg:#f8fafc;--rh-light-purple:#f3e9fa;--rh-border:#e2e8f0;--rh-text:#1e293b;--rh-muted:#475569}
   *{box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:var(--rh-bg);color:var(--rh-text);line-height:1.6}
-  .rh-header{background:linear-gradient(135deg,var(--rh-primary-dark),var(--rh-primary) 55%,var(--rh-accent));color:#fff;padding:1.3rem 1.5rem}
+  .rh-header{background:linear-gradient(135deg,var(--rh-primary-dark),var(--rh-primary) 55%,var(--rh-accent));color:#fff;padding:1.3rem 0}
+  .rh-header-inner{max-width:760px;margin:0 auto;padding:0 1.25rem}
   .rh-header .eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;opacity:.92;font-weight:600}
   .rh-header h1{margin:.3rem 0 0;font-size:1.4rem}
   .who{font-size:.8rem;opacity:.92;margin-top:.35rem}
@@ -100,9 +101,11 @@ router.get('/', (req, res) => {
 </style></head>
 <body>
   <header class="rh-header">
-    <span class="eyebrow">Refuge House, Inc. · Compliance · Staff</span>
-    <h1>Reviewer links</h1>
-    ${who ? `<div class="who">Signed in as ${escapeHtml(who)}</div>` : ''}
+    <div class="rh-header-inner">
+      <span class="eyebrow">Refuge House, Inc. · Compliance · Staff</span>
+      <h1>Reviewer links</h1>
+      ${who ? `<div class="who">Signed in as ${escapeHtml(who)}</div>` : ''}
+    </div>
   </header>
   <main class="wrap">
     ${body}

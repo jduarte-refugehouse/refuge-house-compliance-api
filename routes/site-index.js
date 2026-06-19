@@ -243,7 +243,10 @@ router.get('/site-index', async (req, res) => {
     }
     * { box-sizing: border-box; }
     body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; margin: 0; background: var(--rh-bg); color: var(--rh-text); line-height: 1.6; }
-    .rh-header { background: linear-gradient(135deg,var(--rh-primary-dark) 0%,var(--rh-primary) 50%,var(--rh-accent) 100%); color:#fff; padding: 1.4rem 1.5rem 1.2rem; }
+    .rh-header { background: linear-gradient(135deg,var(--rh-primary-dark) 0%,var(--rh-primary) 50%,var(--rh-accent) 100%); color:#fff; padding: 1.4rem 0 1.2rem; }
+    /* Constrain header content to the same centered column as .wrap so the
+       title/eyebrow left-align with the body content. */
+    .rh-header-inner { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
     .rh-header .eyebrow { font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; opacity:.92; font-weight:600; }
     .rh-header h1 { margin:.3rem 0 .4rem; font-size:1.5rem; }
     .rh-header p { margin:0; font-size:.9rem; opacity:.95; }
@@ -274,9 +277,11 @@ router.get('/site-index', async (req, res) => {
 </head>
 <body>
   <header class="rh-header">
-    <span class="eyebrow">Refuge House, Inc. · Compliance</span>
-    <h1>Policy Manual &amp; Site Index</h1>
-    <p>Browse and search every policy, procedure, plan, and resource published through the Compliance API.</p>
+    <div class="rh-header-inner">
+      <span class="eyebrow">Refuge House, Inc. · Compliance</span>
+      <h1>Policy Manual &amp; Site Index</h1>
+      <p>Browse and search every policy, procedure, plan, and resource published through the Compliance API.</p>
+    </div>
   </header>
   <main class="wrap">
     <div class="topbar">
