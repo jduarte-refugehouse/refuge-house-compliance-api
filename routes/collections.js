@@ -48,7 +48,7 @@ const PAGE_HEAD = `<head>
     .rh-header h1 { margin:.25rem 0 .35rem; font-size:1.5rem; }
     .rh-header p { margin:0; font-size:.9rem; opacity:.95; max-width:70ch; }
     .crumb { display:inline-block; font-size:.8rem; color:#fff; background:rgba(255,255,255,.15); border:1px solid rgba(255,255,255,.35); border-radius:8px; padding:5px 10px; margin-bottom:.7rem; }
-    .main { padding:1.2rem 1.6rem 3rem; max-width:1100px; }
+    .main { padding:1.2rem 1.6rem 3rem; }
     .toolbar { display:flex; gap:.7rem; align-items:center; flex-wrap:wrap; margin-bottom:.9rem; }
     .search { flex:1 1 280px; }
     .search input { width:100%; padding:.6rem .8rem; border:1px solid var(--rh-border); border-radius:10px; font-size:.95rem; background:#fff; }
