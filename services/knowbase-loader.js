@@ -222,6 +222,11 @@ async function syncKnowbase() {
             let status = null;
             let listed = true;
             let collections = [];
+            // CQI / governance metadata carried in frontmatter (review cycle,
+            // ownership, reconciliation state). Stored verbatim so downstream
+            // surfaces (policy manual, collections) can display it.
+            let review = null;
+            let reconciliation = null;
             try {
                 const parsed = matter(raw);
                 content = parsed.content;
@@ -231,6 +236,8 @@ async function syncKnowbase() {
                 status = normalizeStatus(parsed.data && parsed.data.status);
                 listed = !(parsed.data && parsed.data.listed === false);
                 collections = normalizeCollections(parsed.data && parsed.data.collections);
+                review = (parsed.data && parsed.data.review) || null;
+                reconciliation = (parsed.data && parsed.data.reconciliation) || null;
             } catch (parseErr) {
                 console.warn(`[KNOWBASE] Frontmatter parse failed for ${file.path}: ${parseErr.message}`);
                 content = raw;
@@ -247,6 +254,8 @@ async function syncKnowbase() {
                 status,
                 listed,
                 collections,
+                review,
+                reconciliation,
                 lastModified: new Date().toISOString(),
                 sizeBytes: Buffer.byteLength(content, 'utf-8'),
                 category

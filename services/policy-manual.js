@@ -143,7 +143,66 @@ function titleKey(title) {
         .trim();
 }
 
+// Classify the next-review date into a CQI state used for the at-a-glance chip.
+// Within REVIEW_SOON_DAYS of the due date (or already past) is flagged.
+const REVIEW_SOON_DAYS = 90;
+function reviewState(nextReviewDue) {
+    if (!nextReviewDue) return 'unknown';
+    const due = new Date(nextReviewDue);
+    if (isNaN(due.getTime())) return 'unknown';
+    const days = Math.floor((due.getTime() - Date.now()) / 86400000);
+    if (days < 0) return 'overdue';
+    if (days <= REVIEW_SOON_DAYS) return 'due-soon';
+    return 'ok';
+}
+
+// YAML parses bare ISO dates (review.nextReviewDue: 2027-05-22) into JS Date
+// objects. Coerce any date-ish value back to a stable YYYY-MM-DD string (UTC, so
+// it never drifts a day across timezones) for display, search, and comparison.
+function fmtDate(value) {
+    if (!value) return '';
+    if (value instanceof Date) {
+        return isNaN(value.getTime()) ? '' : value.toISOString().slice(0, 10);
+    }
+    const s = String(value).trim();
+    const m = s.match(/^\d{4}-\d{2}-\d{2}/);
+    if (m) return m[0];
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? s : d.toISOString().slice(0, 10);
+}
+
+// Pull the CQI / governance metadata for a single doc: info-table fields plus
+// the frontmatter `review` and `reconciliation` blocks (carried by the loader).
+function extractCqiMeta(doc, meta) {
+    const t = meta || parseDocMeta(doc.content);
+    const rawReview = (doc && doc.review) || null;
+    const rawRecon = (doc && doc.reconciliation) || null;
+    const review = rawReview
+        ? { ...rawReview, lastReviewed: fmtDate(rawReview.lastReviewed), nextReviewDue: fmtDate(rawReview.nextReviewDue) }
+        : null;
+    const reconciliation = rawRecon
+        ? { ...rawRecon, date: fmtDate(rawRecon.date) }
+        : null;
+    return {
+        section: t.section || '',
+        effective: t.effective || '',
+        lastUpdated: t.lastUpdated || '',
+        lastApproved: t.lastApproved || '',
+        revisions: t.revisions || '',
+        review,
+        reconciliation,
+        owner: (review && review.owner) || '',
+        lastReviewed: (review && review.lastReviewed) || '',
+        nextReviewDue: (review && review.nextReviewDue) || '',
+        cycle: (review && review.cycle) || '',
+        reconciledStatus: (reconciliation && reconciliation.status) || '',
+        reconciledNote: (reconciliation && reconciliation.note) || '',
+        reviewState: reviewState(review && review.nextReviewDue)
+    };
+}
+
 function docRef(docPath, doc, meta, accessFor) {
+    const cqi = extractCqiMeta(doc, meta);
     return {
         path: docPath,
         slug: pathToSlug(docPath),
@@ -151,14 +210,15 @@ function docRef(docPath, doc, meta, accessFor) {
         number: meta.number || '',
         department: meta.department || '',
         excerpt: extractExcerpt(doc.content),
-        access: accessFor ? accessFor(doc) : (doc.access || 'public')
+        access: accessFor ? accessFor(doc) : (doc.access || 'public'),
+        ...cqi
     };
 }
 
 function parseDocMeta(content) {
     const t = parseInfoTable(content);
     const number = t['POLICY NUMBER'] || t['PROCEDURE NUMBER'] || '';
-    const title = t['POLICY TITLE'] || t['PROCEDURE TITLE'] || '';
+    const title = t['POLICY TITLE'] || t['PROCEDURE TITLE'] || t['POLICY NAME'] || t['PROCEDURE NAME'] || '';
     return {
         // Some source docs append notes to the number ("FC-BC-01 (PROPOSED ...)").
         // Keep just the clean leading code for badges and pairing.
@@ -166,7 +226,11 @@ function parseDocMeta(content) {
         title: title.trim(),
         related: t['RELATED POLICY'] || '',
         department: (t['DEPARTMENT'] || '').trim(),
-        effective: t['EFFECTIVE DATE'] || '',
+        section: (t['SECTION'] || '').trim(),
+        effective: (t['EFFECTIVE DATE'] || '').trim(),
+        lastUpdated: (t['LAST UPDATED'] || '').trim(),
+        lastApproved: (t['LAST APPROVED'] || '').trim(),
+        revisions: (t['DATE(S) OF REVISION'] || t['REVISION DATE'] || '').trim(),
         review: t['REVIEW DATE'] || t['REVISION DATE'] || ''
     };
 }
@@ -245,6 +309,14 @@ function buildManual(allDocs, isVisible = () => true, accessFor = null) {
         t.excerpt = (t.policy && t.policy.excerpt)
             || (t.combined[0] && t.combined[0].excerpt)
             || (t.procedures[0] && t.procedures[0].excerpt) || '';
+        // CQI/governance fields follow the lead document (policy first).
+        const cqiLead = t.policy || t.combined[0] || t.procedures[0] || {};
+        t.review = cqiLead.review || null;
+        t.reconciliation = cqiLead.reconciliation || null;
+        t.reviewState = cqiLead.reviewState || 'unknown';
+        t.owner = cqiLead.owner || '';
+        t.section = cqiLead.section || '';
+        t.lastUpdated = cqiLead.lastUpdated || '';
         t.procedures.sort((a, b) => a.title.localeCompare(b.title));
         return t;
     }).sort((a, b) => (a.code || a.title).localeCompare(b.code || b.title, undefined, { numeric: true }));
@@ -273,7 +345,9 @@ function buildManual(allDocs, isVisible = () => true, accessFor = null) {
         policies: fosterTopics.filter((t) => t.policy).length,
         procedures: fosterTopics.reduce((n, t) => n + t.procedures.length + t.combined.length, 0),
         personnel: (sections.find((s) => s.id === 'personnel-hr')?.docs || []).length,
-        plans: (sections.find((s) => s.id === 'plans')?.docs || []).length
+        plans: (sections.find((s) => s.id === 'plans')?.docs || []).length,
+        reviewOverdue: fosterTopics.filter((t) => t.reviewState === 'overdue').length,
+        reviewDueSoon: fosterTopics.filter((t) => t.reviewState === 'due-soon').length
     };
 
     return { generatedAt: new Date().toISOString(), sections, counts };
@@ -285,5 +359,14 @@ module.exports = {
     parseInfoTable,
     parseDocMeta,
     extractExcerpt,
-    pathToSlug
+    pathToSlug,
+    // shared helpers for other surfaces (e.g. collections pairing + CQI display)
+    kindForPath,
+    titleKey,
+    stripKindSuffix,
+    humanizeName,
+    filenameTitle,
+    docRef,
+    extractCqiMeta,
+    reviewState
 };

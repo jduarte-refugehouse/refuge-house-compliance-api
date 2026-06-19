@@ -27,63 +27,115 @@ function noStore(res) {
     res.setHeader('Pragma', 'no-cache');
 }
 
-function docLink(label, ref, cls) {
-    if (!ref) return `<span class="chip chip-missing">${escapeHtml(label)}: \u2014</span>`;
+function docChip(label, ref, cls) {
     return `<a class="chip ${cls}" href="/public/documents/${escapeHtml(ref.slug)}" target="_blank" rel="noopener">${escapeHtml(label)} \u2192</a>`;
 }
 
-function renderTopicCard(t) {
-    const procChips = t.procedures.map((p, i) =>
-        docLink(t.procedures.length > 1 ? `Procedure ${i + 1}` : 'Procedure', p, 'chip-proc')).join('');
-    const combinedChips = t.combined.map((c) =>
-        docLink('Policy & Procedure', c, 'chip-combined')).join('');
-    const policyChip = t.combined.length && !t.policy ? '' : docLink('Policy', t.policy, 'chip-policy');
-
-    const search = searchKey(t.title, t.code, t.department, t.excerpt,
-        t.policy && t.policy.path, ...t.procedures.map((p) => p.path));
-
-    const paired = t.policy && (t.procedures.length || t.combined.length);
-    const statusChip = paired
-        ? '<span class="status status-paired">Paired</span>'
-        : (t.policy ? '<span class="status status-partial">Policy only</span>'
-            : '<span class="status status-partial">Procedure only</span>');
-
-    return `<article class="card" data-search="${escapeHtml(search)}">
-      <div class="card-top">
-        ${t.code ? `<span class="code">${escapeHtml(t.code)}</span>` : ''}
-        ${statusChip}
-        ${t.department ? `<span class="dept">${escapeHtml(t.department)}</span>` : ''}
-      </div>
-      <h3 class="card-title">${escapeHtml(t.title)}</h3>
-      ${t.excerpt ? `<p class="excerpt">${escapeHtml(t.excerpt)}</p>` : '<p class="excerpt excerpt-empty">No purpose summary available.</p>'}
-      <div class="links">${policyChip}${combinedChips}${procChips}</div>
-    </article>`;
+function reviewStateLabel(state) {
+    if (state === 'overdue') return 'Overdue';
+    if (state === 'due-soon') return 'Due soon';
+    if (state === 'ok') return 'On track';
+    return '\u2014';
 }
 
-function renderDocCard(d) {
-    const search = searchKey(d.title, d.code, d.department, d.excerpt, d.path);
-    return `<article class="card" data-search="${escapeHtml(search)}">
-      <div class="card-top">
-        ${d.code ? `<span class="code">${escapeHtml(d.code)}</span>` : ''}
-        ${d.department ? `<span class="dept">${escapeHtml(d.department)}</span>` : ''}
-      </div>
-      <h3 class="card-title">${escapeHtml(d.title)}</h3>
-      ${d.excerpt ? `<p class="excerpt">${escapeHtml(d.excerpt)}</p>` : '<p class="excerpt excerpt-empty">No summary available.</p>'}
-      <div class="links">${docLink('Open document', d, 'chip-policy')}</div>
-    </article>`;
+// Review cycle cell: an at-a-glance state chip + next-due (with cycle) and the
+// last-reviewed date. The single most useful CQI signal on the page.
+function reviewCell(review, state) {
+    if (!review || !review.nextReviewDue) return '<span class="dash">\u2014</span>';
+    return `<div class="rev">
+      <span class="rchip ${escapeHtml(state)}">${reviewStateLabel(state)}</span>
+      <span class="rmeta">due ${escapeHtml(review.nextReviewDue)}${review.cycle ? ` \u00b7 ${escapeHtml(review.cycle)}` : ''}</span>
+      ${review.lastReviewed ? `<span class="rmeta muted">last ${escapeHtml(review.lastReviewed)}</span>` : ''}
+    </div>`;
+}
+
+function reconCell(recon) {
+    if (!recon || !recon.status) return '<span class="dash">\u2014</span>';
+    const ok = String(recon.status).toLowerCase() === 'reconciled';
+    const title = recon.note ? ` title="${escapeHtml(recon.note)}"` : '';
+    return `<span class="recon ${ok ? 'ok' : 'pending'}"${title}>${escapeHtml(recon.status)}${recon.note ? ' \u24d8' : ''}</span>`;
+}
+
+function ownerCell(owner, department) {
+    const v = owner || department;
+    return v ? `<span class="owner">${escapeHtml(v)}</span>` : '<span class="dash">\u2014</span>';
+}
+
+const TABLE_HEAD = `<thead><tr>
+  <th style="width:84px">Code</th>
+  <th>Topic</th>
+  <th style="width:140px">Policy</th>
+  <th style="width:30px"></th>
+  <th style="width:210px">Procedure(s)</th>
+  <th style="width:140px">Owner</th>
+  <th style="width:152px">Review</th>
+  <th style="width:118px">Reconciliation</th>
+  <th style="width:104px">Status</th>
+</tr></thead>`;
+
+function renderTopicRow(t) {
+    const policyCell = t.policy
+        ? docChip('Policy', t.policy, 'chip-policy')
+        : (t.combined.length ? '<span class="dash">\u2014 combined \u2014</span>' : '<span class="dash">\u2014 no policy \u2014</span>');
+    const procChips = [
+        ...t.combined.map((c) => docChip('Policy & Procedure', c, 'chip-combined')),
+        ...t.procedures.map((p, i) => docChip(t.procedures.length > 1 ? `Procedure ${i + 1}` : 'Procedure', p, 'chip-proc'))
+    ].join('');
+    const procCell = procChips || '<span class="dash">\u2014 no companion procedure \u2014</span>';
+
+    const paired = t.policy && (t.procedures.length || t.combined.length);
+    const rowCls = paired ? 'paired' : 'partial';
+    const tieCls = paired ? 'tie' : 'tie none';
+    const statusPill = paired
+        ? '<span class="status paired">Paired</span>'
+        : (t.policy ? '<span class="status partial">Policy only</span>' : '<span class="status partial">Procedure only</span>');
+
+    const search = searchKey(t.title, t.code, t.department, t.owner, t.excerpt,
+        t.review && t.review.nextReviewDue, t.review && t.review.lastReviewed,
+        t.reconciliation && t.reconciliation.status,
+        t.policy && t.policy.path, ...t.procedures.map((p) => p.path));
+
+    return `<tr class="${rowCls}" data-row data-search="${escapeHtml(search)}">
+      <td>${t.code ? `<span class="code">${escapeHtml(t.code)}</span>` : '<span class="code muted">\u2014</span>'}</td>
+      <td><div class="topic">${escapeHtml(t.title)}</div>${t.excerpt ? `<div class="excerpt">${escapeHtml(t.excerpt)}</div>` : ''}</td>
+      <td>${policyCell}</td>
+      <td class="${tieCls}">\u2194</td>
+      <td><div class="chip-stack">${procCell}</div></td>
+      <td>${ownerCell(t.owner, t.department)}</td>
+      <td>${reviewCell(t.review, t.reviewState)}</td>
+      <td>${reconCell(t.reconciliation)}</td>
+      <td>${statusPill}</td>
+    </tr>`;
+}
+
+function renderDocRow(d) {
+    const search = searchKey(d.title, d.code, d.department, d.owner, d.excerpt,
+        d.review && d.review.nextReviewDue, d.reconciliation && d.reconciliation.status, d.path);
+    return `<tr data-row data-search="${escapeHtml(search)}">
+      <td>${d.code ? `<span class="code">${escapeHtml(d.code)}</span>` : '<span class="code muted">\u2014</span>'}</td>
+      <td><div class="topic">${escapeHtml(d.title)}</div>${d.excerpt ? `<div class="excerpt">${escapeHtml(d.excerpt)}</div>` : ''}</td>
+      <td colspan="3">${docChip('Open document', d, 'chip-policy')}</td>
+      <td>${ownerCell(d.owner, d.department)}</td>
+      <td>${reviewCell(d.review, d.reviewState)}</td>
+      <td>${reconCell(d.reconciliation)}</td>
+      <td><span class="status doc">Document</span></td>
+    </tr>`;
 }
 
 function renderSection(section) {
-    const count = section.kind === 'paired' ? section.topics.length : section.docs.length;
-    const cards = section.kind === 'paired'
-        ? section.topics.map(renderTopicCard).join('')
-        : section.docs.map(renderDocCard).join('');
+    const isPaired = section.kind === 'paired';
+    const count = isPaired ? section.topics.length : section.docs.length;
+    const rows = isPaired
+        ? section.topics.map(renderTopicRow).join('')
+        : section.docs.map(renderDocRow).join('');
     return `<section class="section" id="sec-${escapeHtml(section.id)}" data-section>
       <div class="section-head">
         <h2>${escapeHtml(section.title)}</h2>
         <span class="section-count">${count}</span>
       </div>
-      <div class="cards">${cards}</div>
+      <div class="panel table-wrap">
+        <table>${TABLE_HEAD}<tbody>${rows}</tbody></table>
+      </div>
     </section>`;
 }
 
@@ -160,6 +212,35 @@ router.get('/', async (req, res) => {
     .chip-proc:hover { background:#ead8f4; }
     .chip-combined { color:#fff; background:var(--rh-accent); }
     .chip-missing { color:#94a3b8; background:#f1f5f9; border-color:var(--rh-border); }
+    .chip-stack { display:flex; flex-wrap:wrap; gap:.3rem; }
+    /* ---- tabular layout ---- */
+    .table-wrap { overflow-x:auto; padding:0; }
+    table { width:100%; border-collapse:collapse; font-size:.88rem; }
+    thead th { position:sticky; top:0; background:#faf7fd; text-align:left; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em; color:var(--rh-primary-dark); font-weight:700; padding:.55rem .75rem; border-bottom:1px solid var(--rh-border); white-space:nowrap; }
+    tbody td { padding:.55rem .75rem; border-bottom:1px solid #eef2f7; vertical-align:top; }
+    tbody tr:last-child td { border-bottom:none; }
+    tbody tr:hover { background:#fcfaff; }
+    tr.paired td:first-child { box-shadow:inset 3px 0 0 #16a34a; }
+    tr.partial td:first-child { box-shadow:inset 3px 0 0 #f59e0b; }
+    .topic { font-weight:600; color:var(--rh-text); }
+    .dash { color:#cbd5e1; font-weight:600; font-size:.8rem; }
+    .tie { text-align:center; color:#16a34a; font-size:1rem; }
+    .tie.none { color:#e2e8f0; }
+    .owner { font-size:.8rem; color:var(--rh-muted); }
+    .status.paired { color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }
+    .status.partial { color:#9a3412; background:#ffedd5; border:1px solid #fed7aa; }
+    .status.doc { color:var(--rh-primary); background:var(--rh-light-purple); border:1px solid #d4b5e4; }
+    .rev { display:flex; flex-direction:column; gap:.15rem; }
+    .rchip { display:inline-block; width:fit-content; font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.03em; border-radius:999px; padding:.05rem .45rem; }
+    .rchip.ok { color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }
+    .rchip.due-soon { color:#92400e; background:#fef3c7; border:1px solid #fde68a; }
+    .rchip.overdue { color:#991b1b; background:#fee2e2; border:1px solid #fecaca; }
+    .rchip.unknown { color:#475569; background:#f1f5f9; border:1px solid var(--rh-border); }
+    .rmeta { font-size:.72rem; color:var(--rh-muted); white-space:nowrap; }
+    .rmeta.muted { opacity:.8; }
+    .recon { font-size:.7rem; font-weight:700; border-radius:6px; padding:.08rem .45rem; white-space:nowrap; cursor:default; }
+    .recon.ok { color:#166534; background:#dcfce7; border:1px solid #bbf7d0; }
+    .recon.pending { color:#9a3412; background:#ffedd5; border:1px solid #fed7aa; }
     #empty { display:none; color:var(--rh-muted); font-size:.9rem; padding:1rem 0; }
     @media (max-width: 820px) {
       .layout { grid-template-columns:1fr; }
@@ -194,6 +275,8 @@ router.get('/', async (req, res) => {
         <strong>${c.procedures}</strong> procedures ·
         <strong>${c.personnel}</strong> personnel/HR ·
         <strong>${c.plans}</strong> plans
+        ${c.reviewOverdue ? ` · <strong style="color:#991b1b">${c.reviewOverdue}</strong> review overdue` : ''}
+        ${c.reviewDueSoon ? ` · <strong style="color:#92400e">${c.reviewDueSoon}</strong> due soon` : ''}
         <span id="filtered"></span>
       </p>
       <p id="empty">No documents match your search.</p>
@@ -203,7 +286,7 @@ router.get('/', async (req, res) => {
   <script>
     (function () {
       var q = document.getElementById('q');
-      var cards = Array.prototype.slice.call(document.querySelectorAll('.card'));
+      var rows = Array.prototype.slice.call(document.querySelectorAll('[data-row]'));
       var sections = Array.prototype.slice.call(document.querySelectorAll('[data-section]'));
       var empty = document.getElementById('empty');
       var filtered = document.getElementById('filtered');
@@ -211,13 +294,13 @@ router.get('/', async (req, res) => {
       function applyFilter() {
         var term = (q.value || '').trim().toLowerCase();
         var shown = 0;
-        cards.forEach(function (card) {
-          var match = !term || card.dataset.search.indexOf(term) !== -1;
-          card.style.display = match ? '' : 'none';
+        rows.forEach(function (row) {
+          var match = !term || row.dataset.search.indexOf(term) !== -1;
+          row.style.display = match ? '' : 'none';
           if (match) shown++;
         });
         sections.forEach(function (sec) {
-          var any = sec.querySelector('.card:not([style*="display: none"])');
+          var any = sec.querySelector('[data-row]:not([style*="display: none"])');
           sec.style.display = any ? '' : 'none';
         });
         empty.style.display = shown ? 'none' : 'block';
