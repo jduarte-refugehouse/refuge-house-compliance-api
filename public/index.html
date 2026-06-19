@@ -97,7 +97,9 @@
 
   /* ---------- Chat ---------- */
   .chat { flex: 1; overflow-y: auto; }
-  .chat-inner { max-width: 780px; margin: 0 auto; padding: 28px 24px 8px; }
+  /* Wider working area so content-heavy answers get real room (capped on
+     ultra-wide screens so line length stays readable). */
+  .chat-inner { max-width: 1320px; margin: 0 auto; padding: 24px 28px 8px; }
 
   /* empty state */
   .welcome { text-align: center; padding: 36px 12px 8px; }
@@ -123,9 +125,11 @@
   .chip:hover { transform: translateY(-1px); box-shadow: var(--rh-shadow-md); border-color: var(--rh-purple-300); }
   .chip i { color: var(--rh-magenta); font-size: 14px; margin-top: 1px; flex-shrink: 0; }
 
-  /* messages */
-  .msg { display: flex; gap: 12px; margin-bottom: 22px; }
-  .msg.user { flex-direction: row-reverse; }
+  /* transcript: paired exchanges — your question (left) · the answer (right) */
+  .transcript { display: flex; flex-direction: column; }
+  .exchange { display: grid; grid-template-columns: minmax(230px, 320px) minmax(0, 1fr); gap: 30px; padding: 24px 0; align-items: start; }
+  .exchange + .exchange { border-top: 1px solid var(--rh-border); }
+
   .avatar {
     width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; display: flex;
     align-items: center; justify-content: center; font-size: 14px; color: #fff;
@@ -133,18 +137,21 @@
   .avatar.bot { background: var(--rh-surface); border: 1px solid var(--rh-purple-200); padding: 5px; }
   .avatar.bot img { width: 100%; height: 100%; object-fit: contain; }
   .avatar.me { background: var(--rh-grad-avatar); font-size: 12px; font-weight: 700; }
-  .msg-col { min-width: 0; max-width: 80%; }
-  .msg.user .msg-col { display: flex; flex-direction: column; align-items: flex-end; }
+
+  /* left rail: your question, sticky so it stays beside a tall answer as you read */
+  .q-side { position: sticky; top: 14px; }
+  .q-card { background: var(--rh-purple-50); border: 1px solid var(--rh-purple-200); border-radius: 14px; padding: 12px 14px; }
+  .q-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .q-head .avatar.me { width: 24px; height: 24px; font-size: 10px; }
+  .q-label { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--rh-primary); }
+  .q-text { font-size: 14px; line-height: 1.5; font-weight: 600; color: var(--rh-ink); white-space: pre-wrap; }
+
+  /* right: the answer, which gets the bulk of the width */
+  .a-side { display: flex; gap: 12px; min-width: 0; }
+  .a-col { flex: 1; min-width: 0; }
   .bubble { padding: 12px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.6; }
-  .msg.user .bubble { background: var(--rh-grad); color: #fff; border-bottom-right-radius: 5px; }
-  .msg.assistant .bubble {
-    background: var(--rh-surface); border: 1px solid var(--rh-border); color: var(--rh-text);
-    border-bottom-left-radius: 5px; box-shadow: var(--rh-shadow-sm);
-  }
-  .msg.system .bubble {
-    background: var(--rh-warn-bg); color: var(--rh-warn-fg); border: 1px solid color-mix(in srgb, var(--rh-warn) 35%, #fff);
-    font-size: 13px; font-weight: 600;
-  }
+  .a-col .bubble { background: var(--rh-surface); border: 1px solid var(--rh-border); color: var(--rh-text); box-shadow: var(--rh-shadow-sm); }
+  .a-col .bubble.sys { background: var(--rh-warn-bg); color: var(--rh-warn-fg); border-color: color-mix(in srgb, var(--rh-warn) 35%, #fff); font-weight: 600; }
   .meta {
     margin-top: 7px; font-size: 11.5px; color: var(--rh-text-3); display: flex; align-items: center; gap: 8px;
     font-family: var(--rh-mono);
@@ -168,8 +175,8 @@
   @keyframes blink { 0%,80%,100%{ opacity:.3 } 40%{ opacity:1 } }
 
   /* ---------- Composer ---------- */
-  .composer-wrap { flex-shrink: 0; background: linear-gradient(180deg, rgba(249,250,251,0), var(--rh-muted) 38%); padding: 8px 24px 16px; }
-  .composer-inner { max-width: 780px; margin: 0 auto; }
+  .composer-wrap { flex-shrink: 0; background: linear-gradient(180deg, rgba(249,250,251,0), var(--rh-muted) 38%); padding: 8px 28px 16px; }
+  .composer-inner { max-width: 1320px; margin: 0 auto; }
   .composer {
     display: flex; align-items: flex-end; gap: 8px; background: var(--rh-surface);
     border: 1px solid var(--rh-border-2); border-radius: 16px; padding: 7px 7px 7px 8px;
@@ -199,6 +206,11 @@
     .menu-btn { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--rh-border); background: var(--rh-surface); color: var(--rh-primary); cursor: pointer; }
     .suggest { grid-template-columns: 1fr; }
     .topbar { padding: 12px 16px; }
+    .chat-inner { padding: 18px 16px 8px; }
+    .composer-wrap { padding: 8px 16px 14px; }
+    /* stack the exchange: question above its answer */
+    .exchange { grid-template-columns: 1fr; gap: 12px; padding: 18px 0; }
+    .q-side { position: static; }
     .scrim { display: none; position: fixed; inset: 0; background: rgba(26,26,46,.4); z-index: 30; }
     .scrim.show { display: block; }
   }
@@ -249,6 +261,7 @@
           <p>Grounded answers from <b id="welcomeDocs">Refuge House policy</b> — policies, procedures &amp; regulations.</p>
           <div class="suggest" id="suggest"></div>
         </div>
+        <div class="transcript" id="transcript"></div>
       </div>
     </div>
 
@@ -271,7 +284,8 @@
   // preview looks alive. On compliance.refugehouse.org it talks to the real API.
   const DEMO = !location.host.endsWith('refugehouse.org');
 
-  const chatInner = document.getElementById('chatInner');
+  const chatEl = document.getElementById('chat');
+  const transcriptEl = document.getElementById('transcript');
   const welcome = document.getElementById('welcome');
   const inputEl = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
@@ -347,23 +361,31 @@
   }
 
   function clearWelcome(){ if(welcome){ welcome.remove(); } }
-  function scrollDown(){ const c=document.getElementById('chat'); c.scrollTop=c.scrollHeight; }
+  function nearBottom(){ return chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 140; }
+  // Only auto-follow streaming output when the reader is already near the bottom,
+  // so a long answer doesn't yank the page while they're reading.
+  function scrollDown(force){ if(force || nearBottom()){ chatEl.scrollTop = chatEl.scrollHeight; } }
 
-  function addUser(text){
-    const div=document.createElement('div'); div.className='msg user';
-    div.innerHTML = `<div class="avatar me">JD</div><div class="msg-col"><div class="bubble">${escapeHtml(text)}</div></div>`;
-    chatInner.appendChild(div); scrollDown();
+  // Build one Q/A row: question card on the left, answer placeholder on the right.
+  function startExchange(question){
+    const ex = document.createElement('div'); ex.className = 'exchange';
+    ex.innerHTML =
+      '<div class="q-side"><div class="q-card">'
+        + '<div class="q-head"><span class="avatar me">JD</span><span class="q-label">You asked</span></div>'
+        + '<div class="q-text">' + escapeHtml(question) + '</div>'
+      + '</div></div>'
+      + '<div class="a-side"><div class="avatar bot"><img src="/mark-purple.png" alt=""></div>'
+        + '<div class="a-col"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>'
+        + '<div class="meta" style="display:none"></div></div></div>';
+    transcriptEl.appendChild(ex);
+    ex.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return { bubble: ex.querySelector('.bubble'), meta: ex.querySelector('.meta'), exchange: ex };
   }
-  function addSystem(text){
-    const div=document.createElement('div'); div.className='msg system';
-    div.innerHTML = `<div class="avatar bot"><img src="/mark-purple.png" alt=""></div><div class="msg-col"><div class="bubble">${escapeHtml(text)}</div></div>`;
-    chatInner.appendChild(div); scrollDown();
-  }
-  function addAssistant(){
-    const div=document.createElement('div'); div.className='msg assistant';
-    div.innerHTML = `<div class="avatar bot"><img src="/mark-purple.png" alt=""></div><div class="msg-col"><div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div><div class="meta" style="display:none"></div></div>`;
-    chatInner.appendChild(div); scrollDown();
-    return { bubble: div.querySelector('.bubble'), meta: div.querySelector('.meta'), div };
+
+  function showError(bubble, meta, text){
+    bubble.classList.add('sys'); bubble.innerHTML = escapeHtml(text);
+    if(meta){ meta.style.display='none'; }
+    scrollDown();
   }
 
   const DEMO_ANSWER = `Under Refuge House policy, a **CANS (Child and Adolescent Needs and Strengths) assessment** is completed on the following schedule:\n\n- **Within 30 days** of the child's initial placement.\n- **Every 90 days** (quarterly) thereafter while the child remains in care.\n- **Upon any significant change** in the child's circumstances or level of care.\n- **At discharge** from the program.\n\n> The assigned case manager is responsible for ensuring each assessment is completed on time and uploaded to the child's folio.\n\nSee the *Foster Care Program Handbook* (**FC-HB §4.2**) for the full requirement.`;
@@ -381,8 +403,8 @@
   async function sendMessage(){
     const message = inputEl.value.trim(); if(!message) return;
     inputEl.value=''; inputEl.style.height='auto'; sendBtn.disabled=true;
-    clearWelcome(); addUser(message);
-    const { bubble, meta } = addAssistant();
+    clearWelcome();
+    const { bubble, meta } = startExchange(message);
 
     if(DEMO){
       demoStream(bubble, meta, ()=>{
@@ -395,7 +417,7 @@
     let fullAnswer='', docCount='?', responseMs='?';
     try{
       const res = await fetch('/console/chat/stream',{ method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({message,history}) });
-      if(!res.ok){ const err=await res.json(); bubble.parentElement.parentElement.remove(); addSystem('Error: '+(err.error||err.message||'Unknown error')); sendBtn.disabled=false; inputEl.focus(); return; }
+      if(!res.ok){ let err={}; try{ err=await res.json(); }catch(_e){} showError(bubble, meta, 'Error: '+(err.error||err.message||('HTTP '+res.status))); sendBtn.disabled=false; inputEl.focus(); return; }
       const reader=res.body.getReader(); const decoder=new TextDecoder(); let buffer='';
       while(true){
         const {done,value}=await reader.read(); if(done) break;
@@ -406,14 +428,14 @@
             if(ev.type==='text'){ fullAnswer+=ev.data; bubble.textContent=fullAnswer; scrollDown(); }
             else if(ev.type==='meta'){ docCount=ev.data.documentsInContext||'?'; }
             else if(ev.type==='done'){ responseMs=ev.data.responseTimeMs||'?'; }
-            else if(ev.type==='error'){ addSystem('Error: '+ev.data); }
+            else if(ev.type==='error'){ showError(bubble, meta, 'Error: '+ev.data); }
           }catch(e){}
         }
       }
-      if(fullAnswer){ bubble.innerHTML=renderMarkdown(fullAnswer); meta.style.display=''; meta.innerHTML=`<span class="src">${docCount} docs referenced</span> · ${responseMs}ms`;
+      if(fullAnswer){ bubble.classList.remove('sys'); bubble.innerHTML=renderMarkdown(fullAnswer); meta.style.display=''; meta.innerHTML=`<span class="src">${docCount} docs referenced</span> · ${responseMs}ms`;
         history.push({role:'user',content:message}); history.push({role:'assistant',content:fullAnswer}); }
-      else { bubble.parentElement.parentElement.remove(); }
-    }catch(e){ bubble.parentElement.parentElement.remove(); addSystem('Network error: '+e.message); }
+      else if(!bubble.classList.contains('sys')){ showError(bubble, meta, 'No response received.'); }
+    }catch(e){ showError(bubble, meta, 'Network error: '+e.message); }
     sendBtn.disabled=false; inputEl.focus();
   }
 
