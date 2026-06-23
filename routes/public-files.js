@@ -14,6 +14,7 @@ const express = require('express');
 const router = express.Router();
 const { allows, deny } = require('../middleware/human-auth');
 const { accessForFilePath } = require('../utils/access');
+const { rewriteServedLinks } = require('../utils/link-rewrite');
 
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
 const KNOWBASE_BRANCH = process.env.KNOWBASE_BRANCH || 'main';
@@ -181,9 +182,18 @@ router.get(/^\/(.+)/, async (req, res) => {
     }
 
     try {
-        const buffer = await fetchKnowbaseRaw(resolved.path);
+        let buffer = await fetchKnowbaseRaw(resolved.path);
         const filename = resolved.path.split('/').pop().replace(/"/g, '');
         const disposition = req.query.download ? 'attachment' : 'inline';
+
+        // Served HTML (e.g. SSCC reference sheets) carries repo-relative links
+        // (../../policies-procedures/...md, ../SSCC/...pdf). Rewrite them to
+        // absolute /public/... URLs at serve time so they click through instead
+        // of resolving to file:// or 404. Binaries pass through untouched.
+        if (resolved.ext === '.html') {
+            const rewritten = rewriteServedLinks(buffer.toString('utf8'), resolved.path);
+            buffer = Buffer.from(rewritten, 'utf8');
+        }
 
         res.setHeader('Content-Type', CONTENT_TYPES[resolved.ext] || 'application/octet-stream');
         res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);

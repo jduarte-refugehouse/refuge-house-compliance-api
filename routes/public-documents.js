@@ -7,6 +7,7 @@ const router = express.Router();
 const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
 const { allows, deny } = require('../middleware/human-auth');
 const { accessForDoc } = require('../utils/access');
+const { rewriteServedLinks } = require('../utils/link-rewrite');
 
 const BRAND = {
     primary: '#5E3989',
@@ -20,16 +21,6 @@ const BRAND = {
     text: '#1e293b',
     muted: '#475569'
 };
-
-const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
-
-function parseRepoUrl(url) {
-    const match = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/i);
-    if (!match) return null;
-    return { owner: match[1], repo: match[2] };
-}
-
-const KNOWBASE_REPO = parseRepoUrl(KNOWBASE_REPO_URL);
 
 // These documents are rendered live from the synced knowbase and must always
 // reflect the latest push to main. Forbid CDN/Front Door caching so external
@@ -83,150 +74,6 @@ function getDocumentFamily(docPath) {
     return { label: 'Reference Document', theme: 'default' };
 }
 
-function parseHrefParts(href) {
-    const trimmed = String(href || '').trim();
-    if (!trimmed) return null;
-
-    const hashIndex = trimmed.indexOf('#');
-    const queryIndex = trimmed.indexOf('?');
-
-    const splitIndex = [hashIndex, queryIndex]
-        .filter((v) => v >= 0)
-        .sort((a, b) => a - b)[0];
-
-    if (splitIndex === undefined) {
-        return { base: trimmed, suffix: '' };
-    }
-
-    return {
-        base: trimmed.slice(0, splitIndex),
-        suffix: trimmed.slice(splitIndex)
-    };
-}
-
-function extractRepoPathFromGithubHref(baseHref) {
-    if (!KNOWBASE_REPO) return null;
-
-    const owner = KNOWBASE_REPO.owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const repo = KNOWBASE_REPO.repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-    const patterns = [
-        // github blob links
-        new RegExp(`^https?:\\/\\/github\\.com\\/${owner}\\/${repo}\\/blob\\/[^/]+\\/(.+)$`, 'i'),
-        // github tree links
-        new RegExp(`^https?:\\/\\/github\\.com\\/${owner}\\/${repo}\\/tree\\/[^/]+\\/(.+)$`, 'i'),
-        // raw links
-        new RegExp(`^https?:\\/\\/raw\\.githubusercontent\\.com\\/${owner}\\/${repo}\\/[^/]+\\/(.+)$`, 'i')
-    ];
-
-    for (const pattern of patterns) {
-        const match = baseHref.match(pattern);
-        if (match && match[1]) return match[1];
-    }
-
-    return null;
-}
-
-function normalizeLinkedPath(href) {
-    if (!href) return null;
-
-    // Keep in-page anchors untouched
-    if (href.startsWith('#')) return null;
-
-    const parts = parseHrefParts(href);
-    if (!parts) return null;
-
-    let candidate = parts.base;
-
-    // Convert known knowbase GitHub links back to repo-relative path if possible
-    if (/^https?:\/\//i.test(candidate)) {
-        const extracted = extractRepoPathFromGithubHref(candidate);
-        if (!extracted) return null;
-        candidate = extracted;
-    }
-
-    // Normalize prefix
-    candidate = candidate.replace(/^\.\//, '').replace(/^\//, '');
-
-    try {
-        candidate = decodeURIComponent(candidate);
-    } catch (_err) {
-        // If decode fails, keep original candidate
-    }
-
-    return {
-        path: candidate || null,
-        suffix: parts.suffix || ''
-    };
-}
-
-function buildDocPathToSlugLookup(allDocs) {
-    const lookup = new Map();
-    for (const docPath of Object.keys(allDocs || {})) {
-        lookup.set(docPath, pathToSlug(docPath));
-    }
-    return lookup;
-}
-
-function isKnowbaseRepoRootLink(baseHref) {
-    if (!KNOWBASE_REPO) return false;
-    const owner = KNOWBASE_REPO.owner;
-    const repo = KNOWBASE_REPO.repo;
-    return new RegExp(`^https?:\\/\\/github\\.com\\/${owner}\\/${repo}\\/?$`, 'i').test(baseHref);
-}
-
-function rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs) {
-    if (!renderedHtml) return renderedHtml;
-
-    const pathToSlug = buildDocPathToSlugLookup(allDocs);
-
-    const routedHtml = renderedHtml.replace(/href="([^"]+)"/g, (full, href) => {
-        const parts = parseHrefParts(href);
-        if (!parts) return full;
-
-        if (isKnowbaseRepoRootLink(parts.base)) {
-            return `href="/public/documents/about${parts.suffix || ''}"`;
-        }
-
-        const normalized = normalizeLinkedPath(href);
-        if (!normalized || !normalized.path) return full;
-
-        const normalizedPath = normalized.path;
-        const suffix = normalized.suffix || '';
-
-        // Special-case root README to About route.
-        if (normalizedPath.toLowerCase() === 'readme.md') {
-            return `href="/public/documents/about${suffix}"`;
-        }
-
-        // Only rewrite markdown doc links for in-app rendering.
-        if (!normalizedPath.toLowerCase().endsWith('.md')) {
-            return full;
-        }
-
-        const slug = pathToSlug.get(normalizedPath);
-        if (!slug) {
-            // Unknown .md path; keep user in app by routing to docs index.
-            return 'href="/public/documents"';
-        }
-
-        return `href="/public/documents/${slug}${suffix}"`;
-    });
-
-    // Force insecure absolute links to https where possible to avoid mixed-content warnings.
-    return routedHtml.replace(/(href|src)="http:\/\/([^"]+)"/gi, (full, attr, target) => {
-        const lower = String(target || '').toLowerCase();
-        if (
-            lower.startsWith('localhost') ||
-            lower.startsWith('127.0.0.1') ||
-            lower.startsWith('0.0.0.0')
-        ) {
-            return full;
-        }
-        return `${attr}="https://${target}"`;
-    });
-}
-
 /**
  * GFM tables can't hold block-level lists, so authors often write numbered
  * steps inline inside a cell ("1. ... 2. ... 3. ..."), which renders as a
@@ -264,7 +111,12 @@ function formatNumberedListsInTableCells(html) {
  */
 function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) {
     const renderedHtml = marked.parse(markdownContent);
-    let htmlBody = rewriteMarkdownLinksToPublicRoutes(renderedHtml, allDocs || {});
+    // Resolve repo-relative links against this document's own path so they
+    // become absolute /public/... URLs (markdown -> /public/documents/<slug>,
+    // anything else -> /public/files/<path>).
+    let htmlBody = rewriteServedLinks(renderedHtml, docPath, {
+        docSet: new Set(Object.keys(allDocs || {}))
+    });
     htmlBody = formatNumberedListsInTableCells(htmlBody);
     const year = new Date().getFullYear();
     const modifiedDate = lastModified
