@@ -184,17 +184,7 @@ async function start() {
     try {
         console.log('[STARTUP] Mirroring content cookbook registry...');
         await cookbook.syncCookbook();
-        const report = cookbook.getValidationReport();
-        if (report.invalid.length > 0) {
-            console.warn(`[STARTUP] Cookbook registry has ${report.invalid.length} invalid entries:`);
-            for (const { slug, issues } of report.invalid) {
-                console.warn(`[STARTUP]   - ${slug}: ${issues.join('; ')}`);
-            }
-        }
-        if (report.warnings.length > 0) {
-            console.warn(`[STARTUP] Cookbook registry has ${report.warnings.length} warnings (drift/coupling)`);
-        }
-        console.log(`[STARTUP] Cookbook ready: ${report.valid}/${report.total} entries`);
+        cookbook.logValidationReport('STARTUP');
     } catch (err) {
         console.error('[STARTUP] Cookbook sync failed:', err.message);
         console.error('[STARTUP] /api/content-cookbook will return empty results until next refresh');

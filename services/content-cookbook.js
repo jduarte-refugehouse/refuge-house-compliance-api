@@ -365,6 +365,29 @@ function getValidationReport() {
     return _validationReport;
 }
 
+/**
+ * Log the current cookbook validation summary — invalid entries, drift/coupling
+ * warnings, and valid/total. Called after EVERY sync path (startup, webhook,
+ * interval, admin) so staleness and drift are not restart-only signals.
+ * `tag` prefixes the log lines (e.g. STARTUP, GITHUB-WEBHOOK, ADMIN, KNOWBASE).
+ */
+function logValidationReport(tag = 'COOKBOOK') {
+    const report = _validationReport || { total: 0, valid: 0, invalid: [], warnings: [] };
+    const invalid = report.invalid || [];
+    const warnings = report.warnings || [];
+    if (invalid.length > 0) {
+        console.warn(`[${tag}] Cookbook registry has ${invalid.length} invalid entries:`);
+        for (const { slug, issues } of invalid) {
+            console.warn(`[${tag}]   - ${slug}: ${(issues || []).join('; ')}`);
+        }
+    }
+    if (warnings.length > 0) {
+        console.warn(`[${tag}] Cookbook registry has ${warnings.length} warnings (drift/coupling)`);
+    }
+    console.log(`[${tag}] Cookbook ready: ${report.valid}/${report.total} entries`);
+    return report;
+}
+
 function getStatus() {
     return {
         lastSyncAt: _lastSyncAt ? new Date(_lastSyncAt).toISOString() : null,
@@ -388,6 +411,7 @@ module.exports = {
     getHtml,
     resolve,
     getValidationReport,
+    logValidationReport,
     getStatus,
     REQUIRED_FIELDS,
     VALID_STATUSES

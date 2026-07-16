@@ -936,6 +936,18 @@ async function refreshIfStale() {
     if (Date.now() - _lastRefresh > REFRESH_INTERVAL_MS) {
         console.log('[KNOWBASE] Cache stale, refreshing...');
         await syncKnowbase();
+
+        // Keep the cookbook mirror aligned with the same interval refresh that
+        // the document cache uses, so startup/webhook/interval all yield the same
+        // surface. Non-fatal: a cookbook failure must not fail the doc refresh.
+        // Lazily required to avoid a load-time cycle.
+        try {
+            const cookbook = require('./content-cookbook');
+            await cookbook.syncCookbook();
+            cookbook.logValidationReport('KNOWBASE');
+        } catch (cookbookErr) {
+            console.warn('[KNOWBASE] Cookbook refresh failed (serving stale):', cookbookErr.message);
+        }
     }
 }
 

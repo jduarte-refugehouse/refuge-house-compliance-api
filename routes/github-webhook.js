@@ -96,6 +96,18 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
             await syncKnowbase();
             console.log('[GITHUB-WEBHOOK] Knowbase sync complete');
 
+            // Re-mirror the cookbook so /site-index/cookbook and
+            // /api/content-cookbook refresh on push (not just at startup/admin).
+            // Non-fatal: a cookbook failure must not abort the registry sync.
+            try {
+                const cookbook = require('../services/content-cookbook');
+                await cookbook.syncCookbook();
+                cookbook.logValidationReport('GITHUB-WEBHOOK');
+                console.log('[GITHUB-WEBHOOK] Cookbook mirror synced');
+            } catch (cookbookErr) {
+                console.error('[GITHUB-WEBHOOK] Cookbook sync failed:', cookbookErr.message);
+            }
+
             // Also sync compliance registry
             try {
                 const { syncComplianceRegistry } = require('../services/knowbase-sync');

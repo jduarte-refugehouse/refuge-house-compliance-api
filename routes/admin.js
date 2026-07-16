@@ -31,6 +31,7 @@ router.post('/sync-knowbase', async (req, res) => {
         let cookbookSynced = false;
         try {
             await cookbook.syncCookbook();
+            cookbook.logValidationReport('ADMIN');
             cookbookSynced = true;
         } catch (err) {
             console.warn('[ADMIN] Cookbook sync failed during manual re-sync:', err.message);
