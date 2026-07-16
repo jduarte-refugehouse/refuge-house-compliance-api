@@ -159,6 +159,13 @@ app.use('/public/documents', publicDocumentRoutes);            // Shareable rend
 const publicFileRoutes = require('./routes/public-files');
 app.use('/public/files', publicFileRoutes);                    // Binary documents (allowlisted)
 
+// Knowbase assets at their repo-root path shape (forms HTML, PDFs, JSON, images).
+// Mounted LAST as a fallback: it only responds for paths in the on-sync asset
+// index, so it never shadows the routes above; unindexed paths fall through to
+// the normal 404. Staff-gated (assets carry no frontmatter ⇒ default staff).
+const knowbaseAssetRoutes = require('./routes/knowbase-assets');
+app.use(knowbaseAssetRoutes);
+
 // Startup
 async function start() {
     // Sync knowbase repo on startup

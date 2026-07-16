@@ -26,6 +26,12 @@ const { owner: REPO_OWNER, repo: REPO_NAME } = parseRepoUrl(KNOWBASE_REPO_URL);
 
 // In-memory document cache: { relativePath: { content, lastModified, sizeBytes, category } }
 let _documentCache = {};
+// Non-markdown asset index (metadata only): { repoPath: { sha, size, ext } }.
+// The knowbase convention is that EVERY repo asset is link-addressable, so
+// markdown docs link forms/PDFs/JSON by relative path. We index them on sync
+// (path -> blob SHA + size) and stream bytes on demand — binaries never live in
+// memory, only a small SHA-keyed LRU of recently-served bytes.
+let _assetIndex = {};
 // Document index: { relativePath: { summary, headings, topics, regulations, packages, tokenEstimate, contentHash } }
 let _documentIndex = {};
 // Static HTML pages cache: { pageName: { content, lastModified, sizeBytes, path } }
@@ -60,6 +66,17 @@ const LEGACY_DESK_REVIEW_ID = 'fy26-sscc';
 // is hardcoded in this repo.
 let _collectionsRegistry = null;
 const COLLECTIONS_REGISTRY_PATH = 'collections/collections.json';
+
+// Non-markdown asset serving. These extensions are indexed on sync and served at
+// their repo-root path by routes/knowbase-assets.js. generated-pdf/** IS included
+// (bot-rendered policy PDFs are useful to serve); README.md, dot-dirs,
+// node_modules/, and source-pdfs/ are skipped (source-pdfs are pre-render inputs).
+const ASSET_EXTENSIONS = ['.html', '.pdf', '.json', '.png', '.svg', '.jpg', '.jpeg'];
+// Size-bounded LRU of served asset bytes, keyed by blob SHA (immutable per push).
+// Cache invalidation is implicit: a changed asset gets a new SHA on re-sync.
+const ASSET_CACHE_MAX_BYTES = parseInt(process.env.ASSET_CACHE_MAX_BYTES || String(64 * 1024 * 1024), 10);
+const _assetBytesCache = new Map(); // sha -> Buffer (insertion order = LRU order)
+let _assetBytesCacheTotal = 0;
 
 // Persistent index cache — survives restarts, avoids re-indexing unchanged documents
 const INDEX_CACHE_DIR = process.env.INDEX_CACHE_DIR || path.join(__dirname, '..', 'data');
@@ -187,6 +204,18 @@ async function syncKnowbase() {
 
     _documentCache = {};
     _rootReadme = null;
+
+    // Index non-markdown assets (metadata only) from the same tree. The route
+    // serves bytes on demand; we only keep path -> { sha, size, ext } here.
+    _assetIndex = {};
+    for (const item of tree.tree) {
+        if (item.type !== 'blob') continue;
+        if (isSkippableAssetPath(item.path)) continue;
+        const ext = path.extname(item.path).toLowerCase();
+        if (!ASSET_EXTENSIONS.includes(ext)) continue;
+        _assetIndex[item.path] = { sha: item.sha, size: item.size || 0, ext };
+    }
+    console.log(`[KNOWBASE] Indexed ${Object.keys(_assetIndex).length} servable assets (${ASSET_EXTENSIONS.join(', ')})`);
 
     // Filter for .md files, skip README.md, hidden dirs, node_modules, source-pdfs
     const mdFiles = tree.tree.filter(item => {
@@ -774,6 +803,82 @@ function getDocumentsByCategory(category) {
 }
 
 /**
+ * Whether a repo path should be skipped when indexing servable assets:
+ * dot-dirs, node_modules/, source-pdfs/ (pre-render inputs), and README.md.
+ * generated-pdf/ is intentionally NOT skipped.
+ */
+function isSkippableAssetPath(repoPath) {
+    if (path.basename(repoPath) === 'README.md') return true;
+    for (const part of String(repoPath).split('/')) {
+        if (part.startsWith('.') || part === 'node_modules' || part === 'source-pdfs') {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Look up an indexed asset by its repo-relative path.
+ * @returns {{ sha: string, size: number, ext: string }|null}
+ */
+function getAsset(repoPath) {
+    if (!repoPath) return null;
+    return _assetIndex[repoPath] || null;
+}
+
+/**
+ * The full asset index (repoPath -> { sha, size, ext }). Metadata only.
+ */
+function getAssetIndex() {
+    return _assetIndex;
+}
+
+// Evict least-recently-used entries until the byte cache is within its cap.
+function _trimAssetBytesCache() {
+    while (_assetBytesCacheTotal > ASSET_CACHE_MAX_BYTES && _assetBytesCache.size > 0) {
+        const oldestSha = _assetBytesCache.keys().next().value;
+        const buf = _assetBytesCache.get(oldestSha);
+        _assetBytesCache.delete(oldestSha);
+        _assetBytesCacheTotal -= buf ? buf.length : 0;
+    }
+}
+
+/**
+ * Fetch the raw bytes for an indexed asset, pinned to the SHA captured on the
+ * last sync. Served bytes are memoized in a size-bounded, SHA-keyed LRU; because
+ * a changed asset gets a new SHA on re-sync, stale bytes are never served.
+ *
+ * @param {string} repoPath - repo-relative path of an indexed asset
+ * @returns {Promise<{ buffer: Buffer, ext: string, sha: string, size: number }|null>}
+ */
+async function fetchAssetBytes(repoPath) {
+    const entry = getAsset(repoPath);
+    if (!entry) return null;
+
+    const cached = _assetBytesCache.get(entry.sha);
+    if (cached) {
+        // Mark as most-recently-used.
+        _assetBytesCache.delete(entry.sha);
+        _assetBytesCache.set(entry.sha, cached);
+        return { buffer: cached, ext: entry.ext, sha: entry.sha, size: cached.length };
+    }
+
+    // Blob API returns base64 content for any file type (binary-safe).
+    const blob = await githubFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/git/blobs/${entry.sha}`);
+    const buffer = Buffer.from(blob.content, blob.encoding === 'base64' ? 'base64' : 'utf-8');
+
+    // Only cache reasonably-sized assets; very large blobs stream through without
+    // evicting the whole cache.
+    if (buffer.length <= ASSET_CACHE_MAX_BYTES) {
+        _assetBytesCache.set(entry.sha, buffer);
+        _assetBytesCacheTotal += buffer.length;
+        _trimAssetBytesCache();
+    }
+
+    return { buffer, ext: entry.ext, sha: entry.sha, size: buffer.length };
+}
+
+/**
  * Get all cached documents.
  */
 function getAllDocuments() {
@@ -921,6 +1026,9 @@ module.exports = {
     getDocumentsByPath,
     getDocumentsByCategory,
     getAllDocuments,
+    getAsset,
+    getAssetIndex,
+    fetchAssetBytes,
     getPublicDocuments,
     getAccessSummary,
     getDocumentIndex,
