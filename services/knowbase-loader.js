@@ -127,15 +127,71 @@ function normalizeCollections(value) {
 }
 
 /**
+ * Normalize the frontmatter `authority` key (the knowledge-stratum marker). Only
+ * lowercased strings; 'practice-wisdom' is the sanctioned value for knowledge
+ * catalogs. Absent ⇒ null (treated as binding policy stratum).
+ */
+function normalizeAuthority(value) {
+    if (typeof value !== 'string') return null;
+    const v = value.trim().toLowerCase();
+    return v || null;
+}
+
+/**
+ * Normalize the frontmatter `contributors` key into a string[] (attribution for
+ * practice-wisdom entries — surfaced on "who says so?" requests, never invented).
+ */
+function normalizeContributors(value) {
+    if (!value) return [];
+    const arr = Array.isArray(value) ? value : [value];
+    return arr
+        .map((c) => (c == null ? '' : String(c).trim()))
+        .filter(Boolean);
+}
+
+// Citation strata (roadmap §2). Every retrieved doc carries one so the answer
+// model can cite with explicit authority and subordinate wisdom to policy:
+//   policy   — binding policy/regulation           → [policy: …]
+//   playbook — operational rule                     → [playbook: …]
+//   knowledge— attributed practice wisdom           → [knowledge: <topic>]
+const KNOWLEDGE_CATALOGS_PREFIX = 'knowledge-catalogs/';
+const PRACTICE_WISDOM_AUTHORITY = 'practice-wisdom';
+
+/**
+ * Derive a doc's citation stratum from its path + `authority`. Knowledge-catalog
+ * entries (or anything explicitly tagged practice-wisdom) are 'knowledge';
+ * playbook/cookbook assets are 'playbook'; everything else is binding 'policy'.
+ */
+function deriveStratum(filePath, authority) {
+    const p = String(filePath || '').toLowerCase();
+    if (authority === PRACTICE_WISDOM_AUTHORITY || p.startsWith(KNOWLEDGE_CATALOGS_PREFIX)) {
+        return 'knowledge';
+    }
+    if (p.startsWith('cookbook/') || p.includes('/cookbook/') || p.includes('playbook')) {
+        return 'playbook';
+    }
+    return 'policy';
+}
+
+/**
  * Surfaceable predicate: a doc is hidden from normal surfaces when it is
  * explicitly unlisted (`listed: false`) or its lifecycle status is one of the
  * hidden states. Used by the site index, default chat context, and compiled
  * collections. Hidden docs remain loaded (and directly searchable).
+ *
+ * Practice-wisdom (knowledge-catalog) entries carry a stricter gate: they only
+ * surface when fully activated — `authority: practice-wisdom` AND `status:
+ * active`. Draft/reviewed knowledge stays loaded and directly searchable but is
+ * kept out of default retrieval, exactly as unlisted/superseded docs are.
  */
 function isSurfaceable(doc) {
     if (!doc) return false;
     if (doc.listed === false) return false;
     if (doc.status && HIDDEN_STATUSES.has(doc.status)) return false;
+    if (doc.stratum === 'knowledge') {
+        if (doc.authority !== PRACTICE_WISDOM_AUTHORITY) return false;
+        if (doc.status !== 'active') return false;
+    }
     return true;
 }
 
@@ -256,6 +312,12 @@ async function syncKnowbase() {
             // surfaces (policy manual, collections) can display it.
             let review = null;
             let reconciliation = null;
+            // Knowledge-stratum metadata (practice wisdom). `authority` marks the
+            // stratum; `topic` is the citation slug (`[knowledge: <topic>]`);
+            // `contributors` is the attribution surfaced on "who says so?".
+            let authority = null;
+            let topic = null;
+            let contributors = [];
             try {
                 const parsed = matter(raw);
                 content = parsed.content;
@@ -267,6 +329,9 @@ async function syncKnowbase() {
                 collections = normalizeCollections(parsed.data && parsed.data.collections);
                 review = (parsed.data && parsed.data.review) || null;
                 reconciliation = (parsed.data && parsed.data.reconciliation) || null;
+                authority = normalizeAuthority(parsed.data && parsed.data.authority);
+                topic = (parsed.data && parsed.data.topic) ? String(parsed.data.topic).trim() : null;
+                contributors = normalizeContributors(parsed.data && parsed.data.contributors);
             } catch (parseErr) {
                 console.warn(`[KNOWBASE] Frontmatter parse failed for ${file.path}: ${parseErr.message}`);
                 content = raw;
@@ -274,6 +339,7 @@ async function syncKnowbase() {
 
             const topDir = file.path.split('/')[0];
             const category = categorize(topDir, file.path);
+            const stratum = deriveStratum(file.path, authority);
 
             _documentCache[file.path] = {
                 content,
@@ -285,6 +351,10 @@ async function syncKnowbase() {
                 collections,
                 review,
                 reconciliation,
+                authority,
+                topic,
+                contributors,
+                stratum,
                 lastModified: new Date().toISOString(),
                 sizeBytes: Buffer.byteLength(content, 'utf-8'),
                 category
@@ -514,6 +584,7 @@ function getCollectionsRegistry() {
  */
 function categorize(topDir, relativePath) {
     const lower = topDir.toLowerCase();
+    if (lower.includes('knowledge')) return 'knowledge';
     if (lower.includes('polic') || lower.includes('procedure')) return 'policy';
     if (lower.includes('regulat') || lower.includes('reference')) return 'regulatory';
     if (lower.includes('model') || lower.includes('framework')) return 'treatment-model';
@@ -963,9 +1034,22 @@ function formatDocumentsAsContext(documents, preamble) {
 
     for (const [docPath, doc] of Object.entries(documents)) {
         const fileName = path.basename(docPath, '.md');
+        const stratum = (doc && doc.stratum) || 'policy';
         context += `--- BEGIN DOCUMENT: ${fileName} ---\n`;
         context += `Source: ${docPath}\n`;
-        context += `Category: ${doc.category}\n\n`;
+        context += `Stratum: ${stratum}\n`;
+        context += `Category: ${doc.category}\n`;
+        // Practice wisdom is attributed, non-binding guidance. Surface its topic
+        // (citation slug) and contributors so the model can cite [knowledge: …]
+        // and answer "who says so?" — and remind it this is never a requirement.
+        if (stratum === 'knowledge') {
+            context += `Authority: practice-wisdom (NON-BINDING guidance — never a requirement; subordinate to policy)\n`;
+            context += `Cite as: [knowledge: ${(doc && doc.topic) || fileName}]\n`;
+            if (doc && Array.isArray(doc.contributors) && doc.contributors.length) {
+                context += `Contributors: ${doc.contributors.join('; ')}\n`;
+            }
+        }
+        context += `\n`;
         context += doc.content;
         context += `\n--- END DOCUMENT: ${fileName} ---\n\n`;
     }
@@ -1031,6 +1115,7 @@ module.exports = {
     listReviews,
     getCollectionsRegistry,
     isSurfaceable,
+    deriveStratum,
     HIDDEN_STATUSES,
     getDocument,
     pathToSlug,

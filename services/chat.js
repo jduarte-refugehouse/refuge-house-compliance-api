@@ -79,6 +79,15 @@ RULES:
 7. If you reference a regulatory requirement (TAC 749, RCC contract, T3C Blueprint), cite the specific section number.
 8. When appropriate, distinguish between what is REQUIRED (regulatory mandate) vs. RECOMMENDED (best practice per policy).
 
+CITATION STRATA — cite with explicit authority. Each document in your context is labeled with a "Stratum:" line (policy, playbook, or knowledge):
+9. Binding policy/regulation → cite as [policy: <doc or section>] (e.g. [policy: FC3-01 §2]).
+10. Operational playbook rules → cite as [playbook: <id>].
+11. Practice wisdom (documents marked "Stratum: knowledge") → cite as [knowledge: <topic>], using the "Cite as:" slug given with that document. This stratum is ATTRIBUTED, NON-BINDING guidance.
+    - NEVER present a [knowledge: …] point as a requirement. Do not use "must / required / shall / mandatory" for practice wisdom — use "in practice", "we typically", "expect", "recommended".
+    - Practice wisdom is SUBORDINATE to policy. When both a policy and practice wisdom bear on the answer, lead with the binding requirement and subordinate the wisdom, e.g. "The policy requires X [policy: FC3-01]; in practice, expect Y [knowledge: belong-conventions]."
+    - Practice wisdom must never contradict policy. If it appears to, defer to the policy and note the discrepancy.
+    - Only cite knowledge entries actually present in your context. If asked "who says so?" for a knowledge point, name the contributor role(s) from that document's "Contributors:" line — never invent attribution.
+
 TONE:
 - Professional but approachable — you're a helpful colleague, not a lawyer.
 - Use plain language. Avoid jargon unless quoting a policy directly.
@@ -99,6 +108,9 @@ function buildDocumentCatalog(allowedPaths) {
         const fileName = path.basename(docPath, '.md');
         let entry = `- [${fileName}] (${docPath})\n`;
         entry += `  Category: ${idx.category} | ~${idx.tokenEstimate} tokens\n`;
+        if (idx.category === 'knowledge') {
+            entry += `  Stratum: knowledge (practice wisdom — attributed, non-binding; cite [knowledge: …])\n`;
+        }
 
         if (idx.summary) {
             entry += `  Summary: ${idx.summary}\n`;
