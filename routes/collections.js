@@ -243,7 +243,7 @@ function renderAssetRow(m) {
     const cqi = m.cqi || {};
     const search = searchKey(m.title, m.type, m.path, m.category, m.date, cqi.owner, cqi.reconciledStatus);
     return `<tr data-row data-search="${escapeHtml(search)}">
-      <td>${m.code ? `<span class="code">${escapeHtml(m.code)}</span>` : '<span class="type-pill">${escapeHtml(m.type)}</span>'}</td>
+      <td>${m.code ? `<span class="code">${escapeHtml(m.code)}</span>` : `<span class="type-pill">${escapeHtml(m.type)}</span>`}</td>
       <td><div class="topic">${escapeHtml(m.title)}</div></td>
       <td colspan="3">${docChip('Open', m, 'chip-open')}</td>
       <td>${ownerCell(cqi.owner)}</td>
