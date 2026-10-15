@@ -56,6 +56,14 @@ function shareKeyForDate(code, dateStr) {
     return hmacKey(shareScope(code), dateStr);
 }
 
+function documentShareScope(slug) {
+    return `share:document:${String(slug || '').trim().toLowerCase()}`;
+}
+
+function documentShareKeyForDate(slug, dateStr) {
+    return hmacKey(documentShareScope(slug), dateStr);
+}
+
 /**
  * Today's reviewer key (or null if no secret is configured).
  */
@@ -71,6 +79,15 @@ function currentReviewerKey() {
 function currentShareKey(code) {
     if (!isConfigured() || !String(code || '').trim()) return null;
     return shareKeyForDate(code, utcDateString());
+}
+
+/**
+ * Today's pass for one document, or null if no secret is set.
+ * Distinct from a collection pass and from the site-wide reviewer key.
+ */
+function currentDocumentShareKey(slug) {
+    if (!isConfigured() || !String(slug || '').trim()) return null;
+    return documentShareKeyForDate(slug, utcDateString());
 }
 
 /**
@@ -114,6 +131,16 @@ function isValidShareKey(code, presented) {
     return false;
 }
 
+function isValidDocumentShareKey(slug, presented) {
+    if (!isConfigured() || !String(slug || '').trim() || !presented || typeof presented !== 'string') return false;
+    const now = Date.now();
+    for (let i = 0; i < WINDOW_DAYS; i++) {
+        const key = documentShareKeyForDate(slug, utcDateString(new Date(now - i * DAY_MS)));
+        if (safeEqual(presented, key)) return true;
+    }
+    return false;
+}
+
 /**
  * Build a shareable reviewer link for a target path on this deployment.
  * @param {string} baseUrl - e.g. "https://compliance-api.refugehouse.org"
@@ -131,8 +158,10 @@ module.exports = {
     isConfigured,
     currentReviewerKey,
     currentShareKey,
+    currentDocumentShareKey,
     isValidReviewerKey,
     isValidShareKey,
+    isValidDocumentShareKey,
     reviewerLinkFor,
     COOKIE_NAME,
     WINDOW_DAYS,

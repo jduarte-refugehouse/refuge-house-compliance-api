@@ -4,9 +4,10 @@
 // that collection. The pass is not the site-wide reviewer key: it does not
 // raise the caller to reviewer on any other route. Document and file routes
 // honor it only for members of the named collection.
-const { currentShareKey, isValidShareKey, WINDOW_DAYS } = require('./reviewer-key');
+const { currentShareKey, currentDocumentShareKey, isValidShareKey, isValidDocumentShareKey, WINDOW_DAYS } = require('./reviewer-key');
 
 const COOKIE_NAME = 'rh_collection_share';
+const DOCUMENT_COOKIE_NAME = 'rh_document_share';
 
 function isShareView(query) {
     return String((query && query.view) || '').trim().toLowerCase() === 'share';
@@ -51,8 +52,37 @@ function shareLink(baseUrl, code) {
     return `${baseUrl}${path}&pass=${pass}`;
 }
 
+function readDocumentGrant(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const dot = raw.indexOf('.');
+    if (dot < 1) return null;
+    const slug = raw.slice(0, dot);
+    const pass = raw.slice(dot + 1);
+    if (!slug || !pass || !isValidDocumentShareKey(slug, pass)) return null;
+    return { slug, pass };
+}
+
+function documentGrantFromRequest(req) {
+    const cookies = req && req.cookies;
+    return readDocumentGrant(cookies && cookies[DOCUMENT_COOKIE_NAME]);
+}
+
+function grantsDocument(req, slug) {
+    const grant = documentGrantFromRequest(req);
+    if (!grant) return false;
+    return grant.slug.toLowerCase() === String(slug || '').trim().toLowerCase();
+}
+
+function documentShareLink(baseUrl, slug) {
+    const path = `/public/documents/${encodeURIComponent(slug)}`;
+    const pass = currentDocumentShareKey(slug);
+    if (!pass) return `${baseUrl}${path}`;
+    return `${baseUrl}${path}?pass=${pass}`;
+}
+
 module.exports = {
     COOKIE_NAME,
+    DOCUMENT_COOKIE_NAME,
     WINDOW_DAYS,
     isShareView,
     cookieValue,
@@ -60,5 +90,9 @@ module.exports = {
     grantFromRequest,
     grantsCollection,
     shareCoversPath,
-    shareLink
+    shareLink,
+    readDocumentGrant,
+    documentGrantFromRequest,
+    grantsDocument,
+    documentShareLink
 };

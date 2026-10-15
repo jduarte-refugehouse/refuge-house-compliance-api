@@ -6,10 +6,12 @@ const assert = require('node:assert/strict');
 const {
     currentReviewerKey,
     currentShareKey,
+    currentDocumentShareKey,
     isValidReviewerKey,
-    isValidShareKey
+    isValidShareKey,
+    isValidDocumentShareKey
 } = require('./reviewer-key');
-const { isShareView, readGrant, cookieValue, shareLink } = require('./collection-share');
+const { isShareView, readGrant, cookieValue, shareLink, readDocumentGrant, documentShareLink } = require('./collection-share');
 
 test('a collection pass is not a site-wide reviewer key', () => {
     const pass = currentShareKey('GEN-PP');
@@ -40,4 +42,18 @@ test('share cookie grants only its own collection', () => {
 test('share link hides the collection index and carries a pass', () => {
     const link = shareLink('https://compliance.refugehouse.org', 'GEN-PP');
     assert.match(link, /^https:\/\/compliance\.refugehouse\.org\/collections\/GEN-PP\?view=share&pass=[0-9a-f]+$/);
+});
+
+test('a document pass opens only that document', () => {
+    const slug = 'disaster-and-emergency-response-preparedness-plan-derpp';
+    const pass = currentDocumentShareKey(slug);
+    assert.equal(isValidDocumentShareKey(slug, pass), true);
+    assert.equal(isValidDocumentShareKey(slug.toUpperCase(), pass), true);
+    assert.equal(isValidDocumentShareKey(slug + '-policy', pass), false);
+    assert.equal(isValidShareKey('GEN-PP', pass), false);
+    assert.equal(isValidReviewerKey(pass), false);
+    assert.equal(readDocumentGrant(`${slug}.${pass}`).slug, slug);
+    assert.equal(readDocumentGrant(`other-doc.${pass}`), null);
+    const link = documentShareLink('https://compliance.refugehouse.org', slug);
+    assert.match(link, new RegExp(`^https://compliance\\.refugehouse\\.org/public/documents/${slug}\\?pass=[0-9a-f]+$`));
 });

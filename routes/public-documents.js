@@ -7,7 +7,8 @@ const router = express.Router();
 const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
 const { allows, deny } = require('../middleware/human-auth');
 const { accessForDoc } = require('../utils/access');
-const { shareCoversPath } = require('../services/collection-share');
+const { shareCoversPath, grantsDocument, documentShareLink, DOCUMENT_COOKIE_NAME, WINDOW_DAYS } = require('../services/collection-share');
+const { isValidDocumentShareKey } = require('../services/reviewer-key');
 const { rewriteServedLinks } = require('../utils/link-rewrite');
 
 const BRAND = {
@@ -110,7 +111,16 @@ function formatNumberedListsInTableCells(html) {
 /**
  * Render a self-contained, branded HTML page from markdown content.
  */
-function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) {
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs, options) {
     const renderedHtml = marked.parse(markdownContent);
     // Resolve repo-relative links against this document's own path so they
     // become absolute /public/... URLs (markdown -> /public/documents/<slug>,
@@ -124,6 +134,10 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         ? new Date(lastModified).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
         : '';
     const family = getDocumentFamily(docPath);
+    const share = options || {};
+    const shareButton = share.shareLink
+        ? `<button type="button" class="copy-share" data-link="${escapeHtml(share.shareLink)}">Copy share link</button>`
+        : '';
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -246,9 +260,13 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
         .doc-pager .toggle:hover { background: #ead8f4; }
         .doc-page { scroll-margin-top: 1rem; }
         .doc-page[hidden] { display: none; }
+        .copy-share { margin-top: 0.75rem; background: ${BRAND.accent}; color: #fff; border: none; border-radius: 8px; padding: 0.4rem 0.75rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+        .copy-share:hover { filter: brightness(1.08); }
+        .copy-share.copied { background: #166534; }
         @media print {
             .doc-pager { display: none !important; }
             .doc-page, .doc-page[hidden] { display: block !important; }
+            .copy-share { display: none !important; }
         }
     </style>
 </head>
@@ -258,6 +276,7 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
             <span class="eyebrow">${family.label}</span>
             <h1>${title}</h1>
             <div class="org-name">Refuge House, Inc.</div>
+            ${shareButton}
         </div>
     </div>
     <div class="container">
@@ -272,6 +291,20 @@ function renderHtmlPage(title, markdownContent, docPath, lastModified, allDocs) 
     <div class="footer">
         &copy; ${year} Refuge House, Inc. &middot; This is a controlled document. Always refer to the current version.
     </div>
+    <script>
+    document.addEventListener('click', function (e) {
+        var btn = e.target.closest && e.target.closest('.copy-share');
+        if (!btn) return;
+        var value = btn.getAttribute('data-link');
+        if (!value || !navigator.clipboard) return;
+        navigator.clipboard.writeText(value).then(function () {
+            var prev = btn.textContent;
+            btn.textContent = 'Copied';
+            btn.classList.add('copied');
+            setTimeout(function () { btn.textContent = prev; btn.classList.remove('copied'); }, 1500);
+        });
+    });
+    </script>
     <script>
     /* Lightweight section pager: splits a long document into pages by heading
        (H1 if there are several, otherwise H2), gives Prev/Next + a jump-to
@@ -541,10 +574,28 @@ router.get('/:slug', (req, res) => {
 
     const { path: docPath, doc } = result;
 
+    const presentedPass = req.query && typeof req.query.pass === 'string' ? req.query.pass : null;
+    if (presentedPass && isValidDocumentShareKey(slug, presentedPass)) {
+        res.cookie(DOCUMENT_COOKIE_NAME, `${slug}.${presentedPass}`, {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: WINDOW_DAYS * 24 * 60 * 60 * 1000,
+            path: '/'
+        });
+        if (format === 'html' && req.query.download !== '1' && req.query.download !== 'true') {
+            const full = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
+            full.searchParams.delete('pass');
+            const next = full.pathname + (full.search || '');
+            return res.redirect(302, next);
+        }
+    }
+
     // Enforce the document's own access tier (default-restrictive = staff).
-    // A collection share pass may open members of that collection only.
+    // A collection share pass may open members of that collection. A document
+    // pass may open only this document.
     const tier = accessForDoc(doc);
-    if (!allows(req, tier) && !shareCoversPath(req, docPath)) {
+    if (!allows(req, tier) && !shareCoversPath(req, docPath) && !grantsDocument(req, slug)) {
         return deny(req, res, tier);
     }
 
@@ -575,8 +626,16 @@ router.get('/:slug', (req, res) => {
         return res.send(doc.content);
     }
 
-    // Default: render as branded HTML page
-    const html = renderHtmlPage(title, doc.content, docPath, doc.lastModified, getAllDocuments());
+    // Default: render as branded HTML page. The copy control is for staff.
+    // Once the gate is enforced, a visitor who arrived with only this document's
+    // pass does not get a button that mints another link.
+    const locked = req.caller && req.caller.mode === 'enforce';
+    const staff = req.caller && req.caller.isStaff;
+    const showShare = !locked || staff;
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const html = renderHtmlPage(title, doc.content, docPath, doc.lastModified, getAllDocuments(), {
+        shareLink: showShare ? documentShareLink(baseUrl, slug) : ''
+    });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
 });
