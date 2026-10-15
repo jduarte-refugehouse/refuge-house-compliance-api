@@ -36,12 +36,24 @@ function utcDateString(date = new Date()) {
     return date.toISOString().slice(0, 10); // YYYY-MM-DD in UTC
 }
 
-function keyForDate(dateStr) {
+function hmacKey(label, dateStr) {
     return crypto
         .createHmac('sha256', SECRET)
-        .update(`reviewer:${dateStr}`)
+        .update(`${label}:${dateStr}`)
         .digest('hex')
         .slice(0, KEY_LENGTH);
+}
+
+function keyForDate(dateStr) {
+    return hmacKey('reviewer', dateStr);
+}
+
+function shareScope(code) {
+    return `share:collection:${String(code || '').trim().toUpperCase()}`;
+}
+
+function shareKeyForDate(code, dateStr) {
+    return hmacKey(shareScope(code), dateStr);
 }
 
 /**
@@ -50,6 +62,15 @@ function keyForDate(dateStr) {
 function currentReviewerKey() {
     if (!isConfigured()) return null;
     return keyForDate(utcDateString());
+}
+
+/**
+ * Today's pass for one collection share link, or null if no secret is set.
+ * Distinct from the site-wide reviewer key: it does not unlock other pages.
+ */
+function currentShareKey(code) {
+    if (!isConfigured() || !String(code || '').trim()) return null;
+    return shareKeyForDate(code, utcDateString());
 }
 
 /**
@@ -83,6 +104,16 @@ function isValidReviewerKey(presented) {
     return false;
 }
 
+function isValidShareKey(code, presented) {
+    if (!isConfigured() || !String(code || '').trim() || !presented || typeof presented !== 'string') return false;
+    const now = Date.now();
+    for (let i = 0; i < WINDOW_DAYS; i++) {
+        const key = shareKeyForDate(code, utcDateString(new Date(now - i * DAY_MS)));
+        if (safeEqual(presented, key)) return true;
+    }
+    return false;
+}
+
 /**
  * Build a shareable reviewer link for a target path on this deployment.
  * @param {string} baseUrl - e.g. "https://compliance-api.refugehouse.org"
@@ -99,7 +130,9 @@ function reviewerLinkFor(baseUrl, targetPath = '/review/fy26-sscc') {
 module.exports = {
     isConfigured,
     currentReviewerKey,
+    currentShareKey,
     isValidReviewerKey,
+    isValidShareKey,
     reviewerLinkFor,
     COOKIE_NAME,
     WINDOW_DAYS,

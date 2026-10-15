@@ -14,6 +14,7 @@ const express = require('express');
 const router = express.Router();
 const { allows, deny } = require('../middleware/human-auth');
 const { accessForFilePath } = require('../utils/access');
+const { shareCoversPath } = require('../services/collection-share');
 const { rewriteServedLinks } = require('../utils/link-rewrite');
 
 const KNOWBASE_REPO_URL = process.env.KNOWBASE_REPO_URL || 'https://github.com/jduarte-refugehouse/refuge-house-knowbase.git';
@@ -177,7 +178,7 @@ router.get(/^\/(.+)/, async (req, res) => {
         }
     }
 
-    if (!allows(req, tier)) {
+    if (!allows(req, tier) && !shareCoversPath(req, resolved.path)) {
         return deny(req, res, tier);
     }
 

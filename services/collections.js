@@ -263,10 +263,23 @@ function compileCollection(code) {
     };
 }
 
+function collectionContainsPath(code, repoPath) {
+    const model = compileCollection(code);
+    if (!model || !repoPath) return false;
+    const want = String(repoPath);
+    for (const group of model.groups) {
+        for (const item of group.items) {
+            if (item.path === want) return true;
+        }
+    }
+    return false;
+}
+
 module.exports = {
     listCollections,
     compileCollection,
     findCollection,
+    collectionContainsPath,
     audienceTier,
     resolveRef
 };

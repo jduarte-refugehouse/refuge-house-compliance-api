@@ -7,6 +7,7 @@ const router = express.Router();
 const { getAllDocuments, getDocumentIndex, getKnowbaseReadme, refreshIfStale } = require('../services/knowbase-loader');
 const { allows, deny } = require('../middleware/human-auth');
 const { accessForDoc } = require('../utils/access');
+const { shareCoversPath } = require('../services/collection-share');
 const { rewriteServedLinks } = require('../utils/link-rewrite');
 
 const BRAND = {
@@ -541,8 +542,9 @@ router.get('/:slug', (req, res) => {
     const { path: docPath, doc } = result;
 
     // Enforce the document's own access tier (default-restrictive = staff).
+    // A collection share pass may open members of that collection only.
     const tier = accessForDoc(doc);
-    if (!allows(req, tier)) {
+    if (!allows(req, tier) && !shareCoversPath(req, docPath)) {
         return deny(req, res, tier);
     }
 

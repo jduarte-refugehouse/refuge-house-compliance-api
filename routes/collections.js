@@ -11,6 +11,15 @@ const { listCollections, compileCollection } = require('../services/collections'
 const { getDocument } = require('../services/knowbase-loader');
 const PM = require('../services/policy-manual');
 const { allows, deny, wantsJson } = require('../middleware/human-auth');
+const {
+    COOKIE_NAME: SHARE_COOKIE,
+    WINDOW_DAYS: SHARE_WINDOW_DAYS,
+    isShareView,
+    cookieValue,
+    grantsCollection,
+    shareLink
+} = require('../services/collection-share');
+const { isValidShareKey, isConfigured: sharePassConfigured } = require('../services/reviewer-key');
 
 function escapeHtml(value) {
     return String(value || '')
@@ -111,6 +120,10 @@ const PAGE_HEAD = `<head>
     .type-pill { font-size:.64rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--rh-primary); background:var(--rh-light-purple); border:1px solid #d4b5e4; border-radius:999px; padding:.06rem .5rem; white-space:nowrap; }
     .open-link { font-size:.82rem; font-weight:600; color:var(--rh-primary); }
     .open-link:hover { color:var(--rh-primary-dark); text-decoration:underline; }
+    .copy-share { font-size:.82rem; font-weight:600; color:#fff; background:var(--rh-accent); border:none; border-radius:8px; padding:.55rem .8rem; cursor:pointer; white-space:nowrap; }
+    .copy-share:hover { filter:brightness(1.08); }
+    .copy-share.copied { background:#166534; }
+    .share-note { flex:1 1 100%; margin:0; font-size:.78rem; color:var(--rh-muted); }
     #empty { display:none; color:var(--rh-muted); font-size:.9rem; padding:1rem 0; }
   </style>
 </head>`;
@@ -139,6 +152,37 @@ function reconCell(recon) {
 function ownerCell(owner) {
     return owner ? `<span class="owner">${escapeHtml(owner)}</span>` : '<span class="dash">\u2014</span>';
 }
+function headerCrumb(share) {
+    if (share) return '';
+    return '<a class="crumb" href="/collections">\u2190 All collections</a>';
+}
+
+function shareExpiredPage() {
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Share link expired — Refuge House Compliance</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;max-width:640px;margin:3rem auto;padding:0 1.5rem;color:#1e293b;line-height:1.6}
+  h1{color:#5E3989}
+  .card{background:#f3e9fa;border:1px solid #d4b5e4;border-radius:12px;padding:1.1rem 1.25rem}
+</style></head>
+<body>
+  <h1>This share link has expired</h1>
+  <div class="card">
+    <p>Ask your Refuge House contact for a fresh link. A share link works for
+    ${SHARE_WINDOW_DAYS} days, then it stops.</p>
+  </div>
+</body></html>`;
+}
+
+function shareAuthorized(req, code) {
+    if (req.caller && req.caller.isStaff) return true;
+    if (!req.caller || req.caller.mode !== 'enforce') return true;
+    return grantsCollection(req, code);
+}
+
 function openLink(m) {
     const target = m.external ? ' target="_blank" rel="noopener"' : '';
     return `<a class="open-link" href="${escapeHtml(m.href)}"${target}>Open \u2192</a>`;
@@ -357,12 +401,40 @@ router.get('/:code', (req, res) => {
         return res.status(404).type('html').send('<!doctype html><h1>Collection not found</h1><p><a href="/collections">All collections</a></p>');
     }
 
-    // Gate the whole collection by its audience tier.
-    if (!allows(req, model.access)) return deny(req, res, model.access);
+    const share = isShareView(req.query);
+    const presentedPass = req.query && typeof req.query.pass === 'string' ? req.query.pass : null;
+    if (presentedPass && isValidShareKey(model.code, presentedPass)) {
+        res.cookie(SHARE_COOKIE, cookieValue(model.code, presentedPass), {
+            httpOnly: true,
+            sameSite: 'lax',
+            secure: process.env.NODE_ENV === 'production',
+            maxAge: SHARE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+            path: '/'
+        });
+        const full = new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
+        full.searchParams.delete('pass');
+        full.searchParams.set('view', 'share');
+        return res.redirect(302, full.pathname + full.search);
+    }
 
-    // Filter each group's items by the caller's tier; drop now-empty groups.
+    // A share link opens this collection only. The ordinary page keeps the
+    // collection's own audience gate.
+    if (share) {
+        if (!shareAuthorized(req, model.code)) {
+            if (wantsJson(req)) return res.status(401).json({ error: 'A current share link is required' });
+            return res.status(401).type('html').send(shareExpiredPage());
+        }
+    } else if (!allows(req, model.access)) {
+        return deny(req, res, model.access);
+    }
+
+    // Share view shows the collection's members. The ordinary page filters each
+    // item by the caller's tier and drops now-empty groups.
     const groups = model.groups
-        .map((g) => ({ category: g.category, items: g.items.filter((m) => allows(req, m.access)) }))
+        .map((g) => ({
+            category: g.category,
+            items: share ? g.items : g.items.filter((m) => allows(req, m.access))
+        }))
         .filter((g) => g.items.length);
     const visibleCount = groups.reduce((n, g) => n + g.items.length, 0);
 
@@ -381,18 +453,28 @@ router.get('/:code', (req, res) => {
         ? renderReviewAssetsTable(groups)
         : renderDocCollectionTable(groups);
 
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const link = shareLink(baseUrl, model.code);
+    const shareNote = sharePassConfigured()
+        ? `Anyone with this link can open this collection for ${SHARE_WINDOW_DAYS} days. It does not open the rest of the site.`
+        : 'This link opens this collection without All collections. A pass is added once reviewer links are turned on.';
+    const shareTools = share
+        ? ''
+        : `<button type="button" class="copy-share" data-link="${escapeHtml(link)}">Copy share link</button><p class="share-note">${escapeHtml(shareNote)}</p>`;
+    const headExtra = share ? '\n  <meta name="robots" content="noindex">' : '';
+
     res.type('html').send(`<!doctype html>
 <html lang="en">
-${PAGE_HEAD.replace('<head>', `<head>\n  <title>${escapeHtml(model.title)} - Refuge House Compliance</title>`)}
+${PAGE_HEAD.replace('<head>', `<head>\n  <title>${escapeHtml(model.title)} - Refuge House Compliance</title>${headExtra}`)}
 <body>
   <header class="rh-header">
-    <a class="crumb" href="/collections">\u2190 All collections</a>
+    ${headerCrumb(share)}
     <span class="eyebrow">Refuge House, Inc. · Compliance · ${escapeHtml(model.type)}</span>
     <h1>${escapeHtml(model.title)}</h1>
     ${model.description ? `<p>${escapeHtml(model.description)}</p>` : ''}
   </header>
   <main class="main">
-    <div class="toolbar"><div class="search"><input type="search" id="q" placeholder="Search this collection\u2026" autocomplete="off" /></div></div>
+    <div class="toolbar"><div class="search"><input type="search" id="q" placeholder="Search this collection\u2026" autocomplete="off" /></div>${shareTools}</div>
     <p class="summary"><strong>${visibleCount}</strong> item${visibleCount === 1 ? '' : 's'} in <strong>${groups.length}</strong> group${groups.length === 1 ? '' : 's'} <span id="filtered"></span></p>
     <p id="empty">No items match your search.</p>
     ${visibleCount ? body : '<p class="summary">No items are available to you in this collection yet.</p>'}
@@ -425,6 +507,18 @@ ${PAGE_HEAD.replace('<head>', `<head>\n  <title>${escapeHtml(model.title)} - Ref
         empty.style.display = shown ? 'none' : 'block';
         filtered.textContent = term ? '· ' + shown + ' shown' : '';
       });
+      document.addEventListener('click', function (e) {
+        var btn = e.target.closest('.copy-share');
+        if (!btn) return;
+        var value = btn.getAttribute('data-link');
+        if (!value || !navigator.clipboard) return;
+        navigator.clipboard.writeText(value).then(function () {
+          var prev = btn.textContent;
+          btn.textContent = 'Copied';
+          btn.classList.add('copied');
+          setTimeout(function () { btn.textContent = prev; btn.classList.remove('copied'); }, 1500);
+        });
+      });
     })();
   </script>
 </body>
@@ -432,3 +526,4 @@ ${PAGE_HEAD.replace('<head>', `<head>\n  <title>${escapeHtml(model.title)} - Ref
 });
 
 module.exports = router;
+module.exports.headerCrumb = headerCrumb;
